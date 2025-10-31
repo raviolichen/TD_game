@@ -1,0 +1,20 @@
+{
+  "name": "pixel-tower-defense",
+  "version": "1.0.0",
+  "description": "可愛像素風塔防遊戲 - 12種塔與特效系統",
+  "main": "index.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "keywords": ["tower-defense", "game", "phaser", "pixel-art"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "phaser": "^3.80.1"
+  },
+  "devDependencies": {
+    "vite": "^5.0.0"
+  }
+}
