@@ -170,10 +170,9 @@ export default class GameScene extends Phaser.Scene {
 
       this.setupOpponentListeners();
       this.showMessage('⚔️ 對戰開始！5 秒後開啟第一波', 0xFFD700);
+      this.startStateSyncBroadcast();
       if (this.playerNumber === 1) {
         this.hostScheduleNextWave(5000);
-        // Host 負責定期廣播遊戲狀態
-        this.startStateSyncBroadcast();
       }
     });
   }
@@ -271,8 +270,7 @@ export default class GameScene extends Phaser.Scene {
 
   // ===== 狀態同步機制 (解決失焦問題) =====
   startStateSyncBroadcast() {
-    console.log('[狀態同步] Host 開始廣播遊戲狀態，間隔: 30ms');
-    // Host 每 30ms 廣播一次遊戲狀態
+    console.log(`[狀態同步] Player ${this.playerNumber} 開始廣播遊戲狀態`);
     if (this.stateSyncInterval) {
       clearInterval(this.stateSyncInterval);
     }
@@ -283,7 +281,7 @@ export default class GameScene extends Phaser.Scene {
         return;
       }
       this.broadcastGameState();
-    }, 30); // 優化：從 300ms 降低到 30ms，達到近似 30fps 的同步率
+    }, 150); // 約 6-7 FPS 的同步頻率，兼顧流暢與效能
   }
 
   stopStateSyncBroadcast() {
@@ -295,7 +293,6 @@ export default class GameScene extends Phaser.Scene {
   }
 
   broadcastGameState() {
-    if (this.playerNumber !== 1) return; // 只有 Host 廣播
     if (!SocketService.socket || !this.roomId) return;
 
     // 收集所有本地敵人的狀態
@@ -323,6 +320,7 @@ export default class GameScene extends Phaser.Scene {
       return;
     }
 
+    console.log(`[廣播] Player ${this.playerNumber} 廣播狀態: ${enemiesState.length} 個敵人`);
     SocketService.emit('game-state-sync', {
       roomId: this.roomId,
       enemies: enemiesState,
@@ -333,20 +331,39 @@ export default class GameScene extends Phaser.Scene {
 
   handleGameStateUpdate(data) {
     if (!data || !data.enemies) return;
-    if (this.playerNumber === 1) return; // Host 不接收狀態
     if (this.matchEnded || this.isGameOver) return;
 
+    const senderId = data.ownerId || null;
+    const localId = this.localPlayerId || SocketService.socket?.id || null;
+    if (senderId && localId && senderId === localId) {
+      console.log('[接收狀態] 忽略自己的廣播');
+      return;
+    }
+    if (senderId && this.opponentPlayerId && senderId !== this.opponentPlayerId) {
+      console.log('[接收狀態] 發送者不是對手，忽略');
+      return;
+    }
+
+    console.log(`[接收狀態] Player ${this.playerNumber} 收到 ${data.enemies.length} 個敵人的狀態更新`);
+    console.log(`[接收狀態] 當前幽靈敵人數量: ${this.remoteEnemiesById.size}`);
+
     // 更新幽靈敵人的狀態
+    let updatedCount = 0;
     data.enemies.forEach(enemyState => {
       const ghost = this.remoteEnemiesById.get(enemyState.id);
-      if (!ghost || !ghost.active) return;
+      if (!ghost || !ghost.active) {
+        console.log(`[接收狀態] 找不到幽靈敵人: ${enemyState.id}`);
+        return;
+      }
 
       ghost.hasNetworkSync = true;
+      ghost.lastSyncTime = Date.now();
 
       // 更新位置（使用插值平滑移動）
       if (enemyState.x !== undefined && enemyState.y !== undefined) {
         ghost.targetX = enemyState.x;
         ghost.targetY = enemyState.y;
+        updatedCount++;
       }
 
       // 更新血量
@@ -361,7 +378,13 @@ export default class GameScene extends Phaser.Scene {
       if (enemyState.pathProgress !== undefined) {
         ghost.pathProgress = enemyState.pathProgress;
       }
+      if (enemyState.pathIndex !== undefined && Array.isArray(ghost.path)) {
+        const nextIndex = Phaser.Math.Clamp(enemyState.pathIndex, 0, ghost.path.length - 1);
+        ghost.targetIndex = nextIndex;
+      }
     });
+
+    console.log(`[接收狀態] 成功更新 ${updatedCount} 個幽靈敵人`);
 
     // 移除不存在的幽靈敵人（可能因為網絡延遲或失焦導致的）
     const activeEnemyIds = new Set(data.enemies.map(e => e.id));
@@ -496,7 +519,8 @@ export default class GameScene extends Phaser.Scene {
       targetIndex: 1,
       pathProgress: 0, // 路徑進度（0-1）
       speed: 50 + (wave * 2),
-      active: true
+      active: true,
+      lastSyncTime: 0
     };
 
     return ghost;
@@ -582,25 +606,33 @@ export default class GameScene extends Phaser.Scene {
   updateGhostEnemies(delta) {
     if (!this.remoteEnemiesById || this.remoteEnemiesById.size === 0) return;
     let activeCount = 0;
+    let movingCount = 0;
     this.remoteEnemiesById.forEach(ghost => {
       if (ghost && ghost.active) {
-        if (ghost.hasNetworkSync && ghost.targetX !== undefined && ghost.targetY !== undefined) {
-          // 優化：配合 30ms 同步間隔，大幅提高插值速度
-          // lerp factor 從 0.5 到 0.85，讓位置快速收斂到目標
-          const lerpFactor = Phaser.Math.Clamp(delta / 50, 0.5, 0.85);
+        const hasNetworkTarget = ghost.targetX !== undefined && ghost.targetY !== undefined;
+        const hasRecentSync = hasNetworkTarget && ghost.lastSyncTime && (Date.now() - ghost.lastSyncTime) < 360;
+        const prevX = ghost.x;
+        const prevY = ghost.y;
+
+        if (hasRecentSync) {
+          const lerpFactor = Phaser.Math.Clamp(delta / 160, 0.2, 0.55);
           ghost.x = Phaser.Math.Linear(ghost.x, ghost.targetX, lerpFactor);
           ghost.y = Phaser.Math.Linear(ghost.y, ghost.targetY, lerpFactor);
           this.positionGhostVisuals(ghost);
         } else {
           this.moveGhostEnemy(ghost, delta);
         }
+
+        if (Math.abs(prevX - ghost.x) > 0.1 || Math.abs(prevY - ghost.y) > 0.1) {
+          movingCount++;
+        }
         activeCount++;
       }
     });
-    // 每 5 秒打印一次幽靈敵人狀態
-    if (!this.lastGhostLogTime || Date.now() - this.lastGhostLogTime > 5000) {
+    // 每 2 秒打印一次幽靈敵人狀態（更頻繁的 debug）
+    if (!this.lastGhostLogTime || Date.now() - this.lastGhostLogTime > 2000) {
       if (activeCount > 0) {
-        console.log('[幽靈敵人] 更新中:', activeCount, '個活躍幽靈敵人');
+        console.log(`[幽靈敵人] Player ${this.playerNumber}: ${activeCount} 個活躍, ${movingCount} 個正在移動`);
       }
       this.lastGhostLogTime = Date.now();
     }

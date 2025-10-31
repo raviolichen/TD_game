@@ -157,17 +157,15 @@ io.on('connection', (socket) => {
     });
   });
 
-  // 接收並轉發完整的遊戲狀態（Host -> Client）
+  // 接收並轉發完整的遊戲狀態（任一玩家 -> 其他玩家）
   socket.on('game-state-sync', (data = {}) => {
     const roomId = data.roomId || socket.data?.roomId;
     if (!roomId) return;
-    // 只有 Host (playerNumber === 1) 可以廣播狀態
-    if (socket.data.playerNumber === 1) {
-      socket.to(roomId).emit('game-state-update', {
-        enemies: data.enemies,
-        timestamp: data.timestamp || Date.now()
-      });
-    }
+    socket.to(roomId).emit('game-state-update', {
+      ownerId: socket.id,
+      enemies: data.enemies,
+      timestamp: data.timestamp || Date.now()
+    });
   });
 });
 
