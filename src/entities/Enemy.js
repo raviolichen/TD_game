@@ -54,6 +54,7 @@ export default class Enemy {
       healthBarY = this.y - 20;
       healthBarWidth = 40;
     }
+    this.visualEmoji = emoji;
 
     this.sprite = this.scene.add.text(this.x, this.y, emoji, {
       fontSize: fontSize
@@ -367,6 +368,9 @@ export default class Enemy {
 
   die() {
     this.active = false;
+    if (this.scene && this.scene.onEnemyDied) {
+      this.scene.onEnemyDied(this);
+    }
 
     // 死亡特效
     this.scene.tweens.add({
@@ -410,6 +414,9 @@ export default class Enemy {
     // 扣除生命
     if (this.scene.loseLife) {
       this.scene.loseLife(this.damage);
+    }
+    if (this.scene && this.scene.onEnemyEscaped) {
+      this.scene.onEnemyEscaped(this);
     }
 
     this.destroy();

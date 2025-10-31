@@ -6,11 +6,15 @@ export default class Tower {
     this.x = x;
     this.y = y;
     this.type = type;
-    this.config = TowerConfig[type];
+    // 深拷貝設定避免個別塔升級時修改到全域平衡數值
+    this.config = JSON.parse(JSON.stringify(TowerConfig[type]));
 
     this.lastFired = 0;
     this.target = null;
     this.level = 1;
+    this.networkId = null;
+    this.owner = 'self';
+    this.isRemote = false;
 
     this.createVisuals();
     this.createRangeIndicator();
@@ -50,6 +54,23 @@ export default class Tower {
 
     // 保存所有視覺元素的引用
     this.visualElements = [this.base, this.sprite, this.tierBadge, this.levelText];
+  }
+
+  markAsOpponent() {
+    this.owner = 'opponent';
+    this.isRemote = true;
+    const DIM_ALPHA = 0.65;
+    if (this.base) {
+      this.base.setAlpha(DIM_ALPHA);
+      if (this.base.disableInteractive) this.base.disableInteractive();
+    }
+    if (this.sprite) {
+      this.sprite.setAlpha(DIM_ALPHA);
+      if (this.sprite.disableInteractive) this.sprite.disableInteractive();
+    }
+    if (this.tierBadge) this.tierBadge.setAlpha(DIM_ALPHA);
+    if (this.levelText) this.levelText.setAlpha(DIM_ALPHA);
+    if (this.rangeCircle) this.rangeCircle.setVisible(false);
   }
 
   createRangeIndicator() {
