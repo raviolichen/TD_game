@@ -10,7 +10,7 @@ export default class GameScene extends Phaser.Scene {
   init() {
     // 遊戲狀態
     this.gold = 500;
-    this.lives = 20;
+    this.lives = 2;
     this.wave = 0;
     this.score = 0;
 
@@ -36,6 +36,7 @@ export default class GameScene extends Phaser.Scene {
     this.bonusEnemiesPerWave = 0; // 每波額外怪物數量
 
     this.pathCollisionRadius = 45;
+    this.isGameOver = false;
   }
 
   preload() {
@@ -1213,6 +1214,8 @@ export default class GameScene extends Phaser.Scene {
   }
 
   update(time, delta) {
+    if (this.isGameOver) return;
+
     // 計算光環效果
     const auraBonus = this.getAuraBonus();
 
@@ -1537,24 +1540,58 @@ export default class GameScene extends Phaser.Scene {
   }
 
   gameOver() {
-    this.add.rectangle(600, 300, 400, 200, 0x000000, 0.8);
+    this.isGameOver = true;
 
-    this.add.text(600, 250, '遊戲結束！', {
+    // 1. 創建一個覆蓋整個畫布的半透明黑色遮罩
+    const overlay = this.add.rectangle(this.cameras.main.width / 2, this.cameras.main.height / 2, this.cameras.main.width, this.cameras.main.height, 0x000000, 0.7);
+    overlay.setDepth(300); // 確保在最上層
+
+    // 2. 顯示失敗訊息
+    this.add.text(this.cameras.main.width / 2, this.cameras.main.height / 2 - 100, '你已經失敗！', {
       fontSize: '48px',
-      color: '#FF0000',
-      fontStyle: 'bold'
-    }).setOrigin(0.5);
+      color: '#FF4444',
+      fontStyle: 'bold',
+      stroke: '#000000',
+      strokeThickness: 6
+    }).setOrigin(0.5).setDepth(301);
 
-    this.add.text(600, 320, `最終分數: ${this.score}`, {
+    // 顯示最終分數 (增加垂直 padding)
+    this.add.text(this.cameras.main.width / 2, this.cameras.main.height / 2, `最終分數: ${this.score}`, {
       fontSize: '24px',
-      color: '#FFD700'
-    }).setOrigin(0.5);
+      color: '#FFD700',
+      padding: { y: 10 } // 增加垂直內邊距防止文字被裁切
+    }).setOrigin(0.5).setDepth(301);
 
-    this.add.text(600, 360, `存活波數: ${this.wave}`, {
-      fontSize: '24px',
-      color: '#00FFFF'
-    }).setOrigin(0.5);
+    // 3. 創建重新開始按鈕
+    const buttonX = this.cameras.main.width / 2;
+    const buttonY = this.cameras.main.height / 2 + 100;
 
-    this.scene.pause();
+    const restartButton = this.add.rectangle(buttonX, buttonY, 200, 60, 0x4CAF50)
+      .setStrokeStyle(3, 0xFFFFFF)
+      .setInteractive({ useHandCursor: true });
+    restartButton.setDepth(301);
+
+    const buttonText = this.add.text(buttonX, buttonY, '重新開始', {
+      fontSize: '28px',
+      color: '#FFFFFF',
+      fontStyle: 'bold',
+      padding: { x: 10, y: 5 } // 增加 padding 防止文字被裁切
+    }).setOrigin(0.5).setDepth(302);
+
+    // 4. 按鈕互動效果
+    restartButton.on('pointerover', () => {
+      restartButton.setFillStyle(0x5CD660);
+      this.tweens.add({ targets: restartButton, scale: 1.05, duration: 200 });
+    });
+
+    restartButton.on('pointerout', () => {
+      restartButton.setFillStyle(0x4CAF50);
+      this.tweens.add({ targets: restartButton, scale: 1, duration: 200 });
+    });
+
+    // 5. 按鈕點擊事件 -> 重新啟動場景
+    restartButton.on('pointerdown', () => {
+      this.scene.restart();
+    });
   }
 }
