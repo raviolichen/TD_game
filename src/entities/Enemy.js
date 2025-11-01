@@ -6,7 +6,15 @@ export default class Enemy {
     this.isBoss = isBoss;
 
     // 根據波數調整屬性
-    const baseHealth = 100 + (waveNumber * 25); // 血量成長速度提升25%
+    let baseHealth = 100 + (waveNumber * 25); // 血量成長速度提升25%
+
+    // 每10波額外增加30-50%血量
+    const tenWaveMultiplier = Math.floor(waveNumber / 10);
+    if (tenWaveMultiplier > 0) {
+      const bonusPercent = 0.3 + (Math.random() * 0.2); // 30%-50%
+      baseHealth *= (1 + (bonusPercent * tenWaveMultiplier));
+    }
+
     this.maxHealth = isBoss ? baseHealth * 20 : baseHealth;
     this.health = this.maxHealth;
     this.speed = 50 + (waveNumber * 2);

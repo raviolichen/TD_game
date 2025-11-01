@@ -2021,7 +2021,7 @@ ${config.emoji} ${config.name}
     this.wave++;
     this.updateUI();
 
-    const isBossWave = this.gameMode === 'singlePlayer' && (this.wave % 10 === 0);
+    const isBossWave = (this.wave % 10 === 0);
     let nextDelay = 30000;
 
     if (isBossWave) {
