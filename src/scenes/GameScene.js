@@ -706,14 +706,15 @@ export default class GameScene extends Phaser.Scene {
       fontStyle: 'bold',
       stroke: '#000000',
       strokeThickness: 6,
-      padding: { x: 10, y: 6 }
+      padding: { x: 20, y: 10 }
     }).setOrigin(0.5).setDepth(401);
 
     const subtitleText = this.add.text(centerX, centerY - 40, subtitle, {
       fontSize: '24px',
       color: '#FFFFFF',
       align: 'center',
-      wordWrap: { width: 640 }
+      wordWrap: { width: 640 },
+      padding: { x: 15, y: 8 }
     }).setOrigin(0.5).setDepth(401);
 
     const primaryButton = this.add.rectangle(centerX, centerY + 40, 240, 60, buttonColor)
@@ -723,7 +724,8 @@ export default class GameScene extends Phaser.Scene {
     const primaryLabel = this.add.text(centerX, centerY + 40, victory ? '返回主選單' : '重新開始配對', {
       fontSize: '24px',
       color: '#FFFFFF',
-      fontStyle: 'bold'
+      fontStyle: 'bold',
+      padding: { x: 10, y: 5 }
     }).setOrigin(0.5).setDepth(402);
 
     primaryButton.on('pointerover', () => primaryButton.setFillStyle(victory ? 0x3DFF8C : 0x5CD660));
@@ -738,7 +740,8 @@ export default class GameScene extends Phaser.Scene {
       .setDepth(401);
     const secondaryLabel = this.add.text(centerX, centerY + 120, '再玩一場', {
       fontSize: '20px',
-      color: '#FFFFFF'
+      color: '#FFFFFF',
+      padding: { x: 10, y: 5 }
     }).setOrigin(0.5).setDepth(402);
 
     secondaryButton.on('pointerover', () => secondaryButton.setFillStyle(0x2C3E50));
@@ -1001,40 +1004,99 @@ export default class GameScene extends Phaser.Scene {
   }
 
   createMultiplayerUI() {
-    this.waveText = this.add.text(20, 508, `🌊 波數: ${this.wave}`, {
+    // 添加底部 UI 背景條
+    const uiBar = this.add.rectangle(0, 500, 1200, 100, 0xF5F5F5, 0.95)
+      .setOrigin(0, 0)
+      .setDepth(100)
+      .setStrokeStyle(3, 0x000000, 1);
+
+    // 基礎資訊顯示
+    this.waveText = this.add.text(20, 515, `🌊 波數: ${this.wave}`, {
       fontSize: '18px',
       color: '#3498DB',
-      fontStyle: 'bold'
-    });
-    this.goldText = this.add.text(20, 548, `💰 ${this.gold}`, {
+      fontStyle: 'bold',
+      stroke: '#000000',
+      strokeThickness: 2,
+      padding: { x: 8, y: 5 }
+    }).setDepth(101);
+
+    this.goldText = this.add.text(20, 545, `💰 ${this.gold}`, {
       fontSize: '20px',
       color: '#F39C12',
       fontStyle: 'bold',
-      padding: { x: 5, y: 5 }
-    });
-    this.livesText = this.add.text(180, 548, `❤️ ${this.lives}`, {
+      padding: { x: 8, y: 5 },
+      stroke: '#000000',
+      strokeThickness: 2
+    }).setDepth(101);
+
+    this.livesText = this.add.text(180, 545, `❤️ ${this.lives}`, {
       fontSize: '20px',
       color: '#E74C3C',
       fontStyle: 'bold',
-      padding: { x: 5, y: 5 }
-    });
-    this.opponentLivesText = this.add.text(820, 520, `對手 ❤️ ${this.opponentLives}`, {
+      padding: { x: 8, y: 5 },
+      stroke: '#000000',
+      strokeThickness: 2
+    }).setDepth(101);
+
+    this.opponentLivesText = this.add.text(1180, 530, `對手 ❤️ ${this.opponentLives}`, {
       fontSize: '18px',
       color: '#D35400',
       fontStyle: 'bold',
-      align: 'right'
-    }).setOrigin(0, 0.5);
+      align: 'right',
+      stroke: '#000000',
+      strokeThickness: 2,
+      padding: { x: 8, y: 5 }
+    }).setOrigin(1, 0.5).setDepth(101);
+
+    // 基礎塔按鈕
     const towerTypes = [TowerTypes.ARROW, TowerTypes.FIRE, TowerTypes.ICE, TowerTypes.MAGIC];
     towerTypes.forEach((type, index) => {
       const x = 320 + index * 110;
       const y = 550;
       this.createTowerButton(x, y, type, 60);
     });
-    this.hintText = this.add.text(950, 550, '💡 在自己的區域建造防線', {
-      fontSize: '16px',
+
+    // 合成按鈕
+    const craftButton = this.add.rectangle(780, 550, 60, 60, 0xB565D8)
+      .setStrokeStyle(3, 0x000000)
+      .setInteractive({ useHandCursor: true });
+    craftButton.setDepth(101);
+
+    const craftIcon = this.add.text(780, 540, '🔨', {
+      fontSize: '24px',
+      color: '#FFFFFF',
+      fontStyle: 'bold'
+    }).setOrigin(0.5).setDepth(102);
+
+    const craftLabel = this.add.text(780, 565, '合成', {
+      fontSize: '10px',
+      color: '#FFFFFF',
+      fontStyle: 'bold'
+    }).setOrigin(0.5).setDepth(102);
+
+    craftButton.on('pointerdown', () => this.toggleCraftMode());
+    craftButton.on('pointerover', () => {
+      craftButton.setFillStyle(0xC67EE8);
+      craftButton.setScale(1.05);
+      craftIcon.setScale(1.05);
+      craftLabel.setScale(1.05);
+    });
+    craftButton.on('pointerout', () => {
+      craftButton.setFillStyle(0xB565D8);
+      craftButton.setScale(1);
+      craftIcon.setScale(1);
+      craftLabel.setScale(1);
+    });
+
+    this.hintText = this.add.text(950, 540, '💡 選擇基礎塔建造\n或點擊🔨進入合成模式', {
+      fontSize: '14px',
       color: '#333333',
-      padding: { x: 5, y: 5 }
-    }).setOrigin(0.5);
+      padding: { x: 12, y: 8 },
+      stroke: '#FFFFFF',
+      strokeThickness: 3,
+      align: 'center',
+      lineSpacing: 4
+    }).setOrigin(0.5).setDepth(101);
   }
 
   createLayout() {
@@ -1264,24 +1326,17 @@ export default class GameScene extends Phaser.Scene {
   handleMapClick(pointer) {
     if (this.gameMode === 'singlePlayer' && pointer.x < 220) return;
 
-    if (this.gameMode === 'multiplayer') {
-        if (!this.playerMapBounds || !Phaser.Geom.Rectangle.Contains(this.playerMapBounds, pointer.x, pointer.y)) {
-            this.showMessage('只能在自己的區域建造！', 0xFF0000);
-            return;
-        }
-    }
+    // 多人模式：忽略底部 UI 區域的點擊（y >= 500）
+    if (this.gameMode === 'multiplayer' && pointer.y >= 500) return;
 
     const clickedTower = this.playerTowers.find(tower => Phaser.Math.Distance.Between(pointer.x, pointer.y, tower.x, tower.y) < 25);
-    
+
     if (clickedTower) {
-      if (this.gameMode === 'singlePlayer') {
-        if (this.craftMode) {
-          this.selectTowerForCraft(clickedTower);
-        } else {
-          this.showTowerInfo(clickedTower);
-        }
+      if (this.craftMode) {
+        this.selectTowerForCraft(clickedTower);
+      } else {
+        this.showTowerInfo(clickedTower);
       }
-      // TODO: Implement multiplayer upgrade/crafting logic
       return;
     }
 
@@ -1295,7 +1350,14 @@ export default class GameScene extends Phaser.Scene {
       }
     }
 
+    // 只有當玩家選擇了塔要建造時，才檢查區域限制
     if (this.selectedTower && !this.craftMode) {
+      if (this.gameMode === 'multiplayer') {
+        if (!this.playerMapBounds || !Phaser.Geom.Rectangle.Contains(this.playerMapBounds, pointer.x, pointer.y)) {
+          this.showMessage('只能在自己的區域建造！', 0xFF0000);
+          return;
+        }
+      }
       this.buildTower(pointer.x, pointer.y, this.selectedTower);
     }
   }
@@ -1842,20 +1904,23 @@ ${config.emoji} ${config.name}
   }
 
   toggleCraftMode() {
-    if (this.gameMode === 'multiplayer') {
-      this.showMessage('🔒 多人模式暫未支援合成功能。', 0xFFA500);
-      return;
-    }
     this.craftMode = !this.craftMode;
     this.clearCraftSelection();
     if (this.craftMode) {
-      this.hintText.setText(`🔨 合成模式
+      const hintTextContent = this.gameMode === 'multiplayer'
+        ? '🔨 合成模式\n點擊已建造的2-3座塔進行合成'
+        : `🔨 合成模式
 點擊2-3座塔
-進行合成`);
-      this.showMessage('🔨 進入合成模式', 0xB565D8);
+進行合成`;
+      this.hintText.setText(hintTextContent);
+      this.showMessage('🔨 合成模式：選擇2-3座塔合成', 0xB565D8);
     } else {
-      this.hintText.setText(`💡 退出
-合成模式`);
+      const hintTextContent = this.gameMode === 'multiplayer'
+        ? '💡 選擇基礎塔建造\n或點擊🔨進入合成模式'
+        : `💡 退出
+合成模式`;
+      this.hintText.setText(hintTextContent);
+      this.showMessage('退出合成模式', 0x888888);
     }
   }
 
