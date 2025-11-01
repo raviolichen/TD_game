@@ -8,7 +8,7 @@ class SocketService {
 
     // 伺服器URL，請根據您的後端位址修改
     // 開發時指向本地的 3001 port，部署後可能需要指向您的 Render 服務位址
-    const serverUrl = 'http://localhost:3001';
+    const serverUrl = 'https://td-game-server.onrender.com';
 
     console.log(`[SocketService] Connecting to ${serverUrl}...`);
     this.socket = io(serverUrl);
