@@ -104,10 +104,8 @@ io.on('connection', (socket) => {
 
   socket.on('remove-tower', (data) => {
     const roomId = data.roomId || socket.data?.roomId;
-    console.log(`[Server] Player ${socket.id} removing tower ${data.towerId} in room ${roomId}`);
     if (roomId) {
       socket.to(roomId).emit('opponent-removed-tower', data);
-      console.log(`[Server] Forwarded opponent-removed-tower event to room ${roomId}`);
     }
   });
 
