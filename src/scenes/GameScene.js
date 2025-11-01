@@ -184,6 +184,9 @@ export default class GameScene extends Phaser.Scene {
     SocketService.off('opponent-upgraded-tower');
     SocketService.on('opponent-upgraded-tower', (data) => this.handleOpponentUpgrade(data));
 
+    SocketService.off('opponent-removed-tower');
+    SocketService.on('opponent-removed-tower', (data) => this.handleOpponentRemoveTower(data));
+
     SocketService.off('opponent-life-update');
     SocketService.on('opponent-life-update', (data) => this.handleOpponentLifeUpdate(data));
 
@@ -211,8 +214,12 @@ export default class GameScene extends Phaser.Scene {
   }
 
   handleOpponentBuild(data) {
+    console.log('[建造] 收到對手建造塔事件:', data);
     if (!data || !this.opponentAreaRect) return;
-    if (data.towerId && this.towerById.has(data.towerId)) return;
+    if (data.towerId && this.towerById.has(data.towerId)) {
+      console.log(`[建造] 警告：塔 ID ${data.towerId} 已存在，跳過建造`);
+      return;
+    }
 
     const worldX = this.opponentAreaRect.x + data.x;
     const worldY = data.y;
@@ -221,9 +228,19 @@ export default class GameScene extends Phaser.Scene {
     if (data.towerId) {
       tower.networkId = data.towerId;
       this.towerById.set(data.towerId, tower);
+      console.log(`[建造] 對手塔已建造，ID: ${data.towerId}，類型: ${data.towerType}，等級: ${data.level || 1}`);
     }
+
+    // 如果有等級資訊，升級塔到對應等級
+    if (data.level && data.level > 1) {
+      for (let i = 1; i < data.level; i++) {
+        tower.upgrade();
+      }
+    }
+
     this.opponentTowers.push(tower);
     this.towers.push(tower);
+    console.log(`[建造] 當前對手塔數量: ${this.opponentTowers.length}，所有塔 ID:`, Array.from(this.towerById.keys()));
     this.createBuildEffect(worldX, worldY, tower.config.color);
   }
 
@@ -233,6 +250,28 @@ export default class GameScene extends Phaser.Scene {
     if (!tower || !tower.isRemote) return;
     tower.upgrade();
     this.createUpgradeEffect(tower.x, tower.y, tower.config.effectColor);
+  }
+
+  handleOpponentRemoveTower(data) {
+    console.log('[接收] 收到移除塔事件:', data);
+    if (!data || !data.towerId) {
+      console.log('[接收] 錯誤：缺少塔 ID');
+      return;
+    }
+    const tower = this.towerById.get(data.towerId);
+    if (!tower) {
+      console.log(`[接收] 錯誤：找不到塔 ID ${data.towerId}，現有塔 ID:`, Array.from(this.towerById.keys()));
+      return;
+    }
+
+    console.log(`[接收] 成功移除對手的塔 ID: ${data.towerId}`);
+    // 從所有列表中移除塔
+    this.opponentTowers = this.opponentTowers.filter(t => t !== tower);
+    this.towers = this.towers.filter(t => t !== tower);
+    this.towerById.delete(data.towerId);
+
+    // 銷毀塔
+    tower.destroy();
   }
 
   handleOpponentLifeUpdate(data) {
@@ -782,6 +821,7 @@ export default class GameScene extends Phaser.Scene {
       SocketService.off('game-start');
       SocketService.off('opponent-built-tower');
       SocketService.off('opponent-upgraded-tower');
+      SocketService.off('opponent-removed-tower');
       SocketService.off('opponent-life-update');
       SocketService.off('opponent-defeated');
       SocketService.off('opponent-disconnected');
@@ -1604,6 +1644,7 @@ ${config.name}`);
 
   // #region Tower Interaction (Single Player)
   selectTowerForCraft(tower) {
+    console.log(`[合成選擇] 選中塔，類型: ${tower.type}，networkId: ${tower.networkId || '無'}`);
     if (!this.craftTower1) {
       this.craftTower1 = tower;
       tower.showRange();
@@ -1675,14 +1716,32 @@ ${tower.config.emoji}
 
     const newConfig = TowerConfig[newTowerType];
     let inheritLevel = Infinity;
+    const towerIdsToRemove = [];
     towersToRemove.forEach(t => {
       if (t.sprite && t.sprite.active) t.hideRange();
       inheritLevel = Math.min(inheritLevel, t.level);
+      if (t.networkId) {
+        towerIdsToRemove.push(t.networkId);
+        console.log(`[合成] 準備移除塔 ID: ${t.networkId}`);
+      } else {
+        console.log(`[合成] 警告：塔沒有 networkId`, t);
+      }
     });
+
+    // 在多人模式中，通知對手移除舊塔
+    if (this.gameMode === 'multiplayer' && SocketService.socket && this.roomId) {
+      console.log(`[合成] 發送移除塔事件，數量: ${towerIdsToRemove.length}`, towerIdsToRemove);
+      towerIdsToRemove.forEach(towerId => {
+        SocketService.emit('remove-tower', { roomId: this.roomId, towerId });
+      });
+    }
 
     this.playerTowers = this.playerTowers.filter(t => !towersToRemove.includes(t));
     this.towers = this.towers.filter(t => !towersToRemove.includes(t));
-    towersToRemove.forEach(t => t.destroy());
+    towersToRemove.forEach(t => {
+      if (t.networkId) this.towerById.delete(t.networkId);
+      t.destroy();
+    });
 
     const newTower = new Tower(this, newX, newY, newTowerType);
     this.playerTowers.push(newTower);
@@ -1692,13 +1751,38 @@ ${tower.config.emoji}
       for (let i = 1; i < inheritLevel; i++) newTower.upgrade();
     }
 
+    // 在多人模式中，給新塔分配 ID 並通知對手
+    if (this.gameMode === 'multiplayer' && SocketService.socket && this.roomId) {
+      const towerId = this.createTowerNetworkId();
+      newTower.networkId = towerId;
+      this.towerById.set(towerId, newTower);
+      console.log(`[合成] 新塔已建造，ID: ${towerId}，類型: ${newTowerType}，等級: ${inheritLevel}`);
+
+      const relativeX = newX - (this.playerAreaRect ? this.playerAreaRect.x : 0);
+      const buildData = {
+        roomId: this.roomId,
+        x: relativeX,
+        y: newY,
+        towerType: newTowerType,
+        towerId: towerId,
+        level: inheritLevel
+      };
+      console.log(`[合成] 發送新塔建造事件:`, buildData);
+      SocketService.emit('build-tower', buildData);
+    }
+
     this.createCraftEffect(newX, newY, newConfig.color);
     this.showMessage(`🎉 成功合成 ${newConfig.emoji} ${newConfig.name}！Lv.${inheritLevel}`, 0xFFD700);
     this.clearCraftSelection();
     this.craftMode = false;
-    this.hintText.setText(`🎉 合成成功
+    if (this.hintText) {
+      const hintTextContent = this.gameMode === 'multiplayer'
+        ? '💡 選擇基礎塔建造\n或點擊🔨進入合成模式'
+        : `🎉 合成成功
 ${newConfig.emoji}
-${newConfig.name}`);
+${newConfig.name}`;
+      this.hintText.setText(hintTextContent);
+    }
   }
 
   clearCraftSelection() {

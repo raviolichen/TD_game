@@ -36,7 +36,10 @@ class SocketService {
   // 發送事件到伺服器
   emit(eventName, data) {
     if (this.socket) {
+      console.log(`[SocketService.emit] 發送事件: ${eventName}`, data);
       this.socket.emit(eventName, data);
+    } else {
+      console.error(`[SocketService.emit] 錯誤：socket 未連接，無法發送事件: ${eventName}`);
     }
   }
 
