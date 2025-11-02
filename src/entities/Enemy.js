@@ -1,3 +1,7 @@
+// 怪物配置參數
+const MINION_ABILITY_START_WAVE = 11; // 從第幾波開始小怪獲得技能
+const HEALTH_BONUS_WAVE_INTERVAL = 10; // 每幾波額外增加血量
+
 export default class Enemy {
   constructor(scene, path, waveNumber = 1, isBoss = false) {
     this.scene = scene;
@@ -8,11 +12,17 @@ export default class Enemy {
     // 根據波數調整屬性
     let baseHealth = 100 + (waveNumber * 25); // 血量成長速度提升25%
 
-    // 每10波額外增加30-50%血量
-    const tenWaveMultiplier = Math.floor(waveNumber / 10);
+    // 每N波額外增加30-50%血量
+    const tenWaveMultiplier = Math.floor(waveNumber / HEALTH_BONUS_WAVE_INTERVAL);
     if (tenWaveMultiplier > 0) {
       const bonusPercent = 0.3 + (Math.random() * 0.2); // 30%-50%
       baseHealth *= (1 + (bonusPercent * tenWaveMultiplier));
+    }
+
+    // 前5波血量調整：第1波-50%, 第2波-40%, 第3波-30%, 第4波-20%, 第5波-10%
+    if (waveNumber <= 5) {
+      const reduction = (6 - waveNumber) * 0.1; // 0.5, 0.4, 0.3, 0.2, 0.1
+      baseHealth *= (1 - reduction);
     }
 
     this.maxHealth = isBoss ? baseHealth * 20 : baseHealth;
@@ -30,6 +40,9 @@ export default class Enemy {
     this.abilityTimers = {};
     if (isBoss) {
       this.initializeBossAbilities();
+    } else if (waveNumber >= MINION_ABILITY_START_WAVE) {
+      // 從指定波數開始，小怪隨機獲得一種Boss技能
+      this.initializeMinionAbility();
     }
 
     // 狀態效果
@@ -49,14 +62,22 @@ export default class Enemy {
 
     if (this.isBoss) {
       // BOSS使用特殊emoji和4倍體型
-      const bossEmojis = ['🐲', '👑', '💀', '🦖', '👿'];
+      const bossEmojis = [
+        '🐲', '👑', '💀', '🦖', '👿',
+        '🐉', '😈', '🦁', '🐯', '🐺',
+        '🦅', '🦂', '🐍', '🕷️', '🦇'
+      ];
       emoji = Phaser.Math.RND.pick(bossEmojis);
       fontSize = '112px'; // 28px * 4
       healthBarY = this.y - 70; // 調整血條位置
       healthBarWidth = 160; // 血條也要加大 (40 * 4)
     } else {
       // 普通怪物
-      const monsterEmojis = ['👾', '👹', '👺', '🤖', '👻', '💀'];
+      const monsterEmojis = [
+        '👾', '👹', '👺', '🤖', '👻', '💀',
+        '🧟', '🧛', '🧌', '👽', '🦴', '🎃',
+        '🐀', '🐊', '🦎', '🐝', '🐜', '🪲'
+      ];
       emoji = Phaser.Math.RND.pick(monsterEmojis);
       fontSize = '28px';
       healthBarY = this.y - 20;
@@ -87,14 +108,36 @@ export default class Enemy {
 
     // 效果指示器容器
     this.effectIndicators = [];
+
+    // 如果有技能，顯示技能圖標
+    if (this.bossAbilities.length > 0) {
+      const iconOffsetX = this.isBoss ? 60 : 15;
+      const iconOffsetY = this.isBoss ? -60 : -15;
+      const iconFontSize = this.isBoss ? '24px' : '16px';
+
+      // 顯示所有技能圖標
+      this.abilityIndicators = [];
+      this.bossAbilities.forEach((ability, index) => {
+        const indicator = this.scene.add.text(
+          this.x + iconOffsetX + (index * 25),
+          this.y + iconOffsetY,
+          ability.icon,
+          { fontSize: iconFontSize }
+        );
+        indicator.setDepth(52);
+        this.abilityIndicators.push(indicator);
+      });
+    }
   }
 
   update(delta, auraBonus = null) {
     if (!this.active) return;
 
-    // 更新Boss技能
+    // 更新Boss技能或小怪技能
     if (this.isBoss) {
       this.updateBossAbilities(delta);
+    } else if (this.bossAbilities.length > 0) {
+      this.updateMinionAbility(delta);
     }
 
     // 更新狀態效果
@@ -108,12 +151,16 @@ export default class Enemy {
   }
 
   move(delta, auraBonus = null) {
+    if (!this.path || this.path.length === 0) return;
+
     if (this.pathIndex >= this.path.length) {
       this.reachEnd();
       return;
     }
 
     const target = this.path[this.pathIndex];
+    if (!target) return;
+
     const angle = Math.atan2(target.y - this.y, target.x - this.x);
 
     // 計算當前速度 (考慮減速效果和光環效果)
@@ -368,6 +415,15 @@ export default class Enemy {
       indicator.setPosition(this.x - 15 + (index * 10), effectIconY);
     });
 
+    // 更新技能圖標位置
+    if (this.abilityIndicators && this.abilityIndicators.length > 0) {
+      const iconOffsetX = this.isBoss ? 60 : 15;
+      const iconOffsetY = this.isBoss ? -60 : -15;
+      this.abilityIndicators.forEach((indicator, index) => {
+        indicator.setPosition(this.x + iconOffsetX + (index * 25), this.y + iconOffsetY);
+      });
+    }
+
     // 冰凍效果視覺
     if (!this.effects.frozen.active && this.sprite.tintTopLeft === 0x87CEEB) {
       this.sprite.clearTint();
@@ -434,27 +490,43 @@ export default class Enemy {
     if (this.sprite) this.sprite.destroy();
     if (this.healthBar) this.healthBar.destroy();
     if (this.healthBarBg) this.healthBarBg.destroy();
+    if (this.abilityIndicators) {
+      this.abilityIndicators.forEach(indicator => indicator.destroy());
+    }
     this.effectIndicators.forEach(indicator => indicator.destroy());
   }
 
   // Boss技能系統
   initializeBossAbilities() {
     const availableAbilities = [
-      { name: 'speed', icon: '⚡', desc: '加速' },
-      { name: 'summon', icon: '👾', desc: '召喚小怪' },
-      { name: 'leap', icon: '🦘', desc: '跳躍' },
-      { name: 'defense', icon: '🛡️', desc: '防禦' },
-      { name: 'freeze', icon: '❄️', desc: '凍結塔' }
+      { name: 'speed', icon: '⚡', desc: '加速', cooldown: 5000 },
+      { name: 'summon', icon: '👾', desc: '召喚小怪', cooldown: 10000 },
+      { name: 'leap', icon: '🦘', desc: '跳躍', cooldown: 8000 },
+      { name: 'defense', icon: '🛡️', desc: '防禦', cooldown: 0 },
+      { name: 'freeze', icon: '❄️', desc: '凍結塔', cooldown: 12000 }
     ];
 
-    // 隨機選擇1-2種技能
-    const abilityCount = Math.random() < 0.5 ? 1 : 2;
+    // 根據波數決定Boss技能數量
+    const waveNum = this.scene ? this.scene.wave : 1;
+    let abilityCount;
+
+    if (waveNum >= 61) {
+      // 61波以後：全部5種技能
+      abilityCount = 5;
+    } else if (waveNum >= 41) {
+      // 41-60波：3種技能
+      abilityCount = 3;
+    } else {
+      // 40波以前：1-2種技能
+      abilityCount = Math.random() < 0.5 ? 1 : 2;
+    }
+
     const shuffled = [...availableAbilities].sort(() => Math.random() - 0.5);
     this.bossAbilities = shuffled.slice(0, abilityCount);
 
-    // 初始化技能計時器
+    // 初始化技能計時器為冷卻時間，讓Boss一出場就能立即施放技能
     this.bossAbilities.forEach(ability => {
-      this.abilityTimers[ability.name] = 0;
+      this.abilityTimers[ability.name] = ability.cooldown;
     });
 
     // 顯示Boss技能
@@ -469,15 +541,71 @@ export default class Enemy {
     }
   }
 
+  // 小怪技能系統（從第11波開始）
+  initializeMinionAbility() {
+    const allAbilities = [
+      { name: 'speed', icon: '⚡', desc: '加速', cooldown: 5000 },
+      { name: 'leap', icon: '🦘', desc: '跳躍', cooldown: 8000 },
+      { name: 'defense', icon: '🛡️', desc: '防禦', cooldown: 0 },
+      { name: 'freeze', icon: '❄️', desc: '凍結塔', cooldown: 12000 }
+    ];
+
+    let availableAbilities = [];
+    let abilityCount = 1;
+
+    // 根據波數決定可用技能和數量
+    const waveNum = this.scene ? this.scene.wave : 1;
+
+    if (waveNum >= 51) {
+      // 51波以後：全部4種技能
+      availableAbilities = [...allAbilities];
+      abilityCount = 4;
+    } else if (waveNum >= 41) {
+      // 41-50波：4種技能選2種
+      availableAbilities = [...allAbilities];
+      abilityCount = 2;
+    } else if (waveNum >= 31) {
+      // 31-40波：3種技能可選，選1種
+      availableAbilities = [allAbilities[0], allAbilities[2], allAbilities[3]]; // 加速、防禦、凍結
+      abilityCount = 1;
+    } else if (waveNum >= 21) {
+      // 21-30波：2種技能可選，選1種
+      availableAbilities = [allAbilities[0], allAbilities[1]]; // 加速、跳躍
+      abilityCount = 1;
+    } else {
+      // 11-20波：只有加速
+      availableAbilities = [allAbilities[0]]; // 加速
+      abilityCount = 1;
+    }
+
+    // 隨機選擇技能
+    const shuffled = [...availableAbilities].sort(() => Math.random() - 0.5);
+    this.bossAbilities = shuffled.slice(0, abilityCount);
+
+    // 初始化技能計時器為冷卻時間，讓小怪一出場就能立即施放技能
+    this.bossAbilities.forEach(ability => {
+      this.abilityTimers[ability.name] = ability.cooldown;
+
+      // 初始化防禦技能的傷害減免（如果有）
+      if (ability.name === 'defense') {
+        this.damageReduction = 0.05 + Math.random() * 0.1; // 5%-15% (比Boss弱)
+      }
+    });
+
+    // 在小怪身上顯示技能圖標
+    this.hasSpecialAbility = true;
+  }
+
   updateBossAbilities(delta) {
     if (!this.isBoss || !this.active) return;
 
+    // Boss技能無視冰凍狀態，即使被冰凍也能施放技能
     this.bossAbilities.forEach(ability => {
       this.abilityTimers[ability.name] += delta;
 
       switch(ability.name) {
         case 'speed':
-          this.updateSpeedAbility();
+          this.updateSpeedAbility(delta);
           break;
         case 'summon':
           this.updateSummonAbility();
@@ -492,7 +620,27 @@ export default class Enemy {
     });
   }
 
-  updateSpeedAbility() {
+  updateMinionAbility(delta) {
+    if (!this.active || this.bossAbilities.length === 0) return;
+
+    const ability = this.bossAbilities[0];
+    this.abilityTimers[ability.name] += delta;
+
+    switch(ability.name) {
+      case 'speed':
+        this.updateSpeedAbility(delta);
+        break;
+      case 'leap':
+        this.updateLeapAbility(delta);
+        break;
+      case 'freeze':
+        this.updateFreezeAbility();
+        break;
+      // 小怪不會有召喚技能
+    }
+  }
+
+  updateSpeedAbility(delta) {
     // 加速技能：每5秒觸發一次，持續2秒
     if (this.abilityTimers.speed >= 5000) {
       if (!this.speedBoostActive) {
@@ -504,7 +652,7 @@ export default class Enemy {
     }
 
     if (this.speedBoostActive) {
-      this.speedBoostDuration -= 16; // 假設60fps
+      this.speedBoostDuration -= delta;
       if (this.speedBoostDuration <= 0) {
         this.speedBoostActive = false;
         this.speed = this.originalSpeed;
@@ -522,13 +670,44 @@ export default class Enemy {
   }
 
   summonMinion() {
-    // 在Boss當前位置召喚小怪
-    if (this.scene && this.scene.enemies) {
-      const minion = new Enemy(this.scene, this.path, 1, false);
-      minion.pathIndex = this.pathIndex;
-      minion.x = this.x + (Math.random() - 0.5) * 50;
-      minion.y = this.y + (Math.random() - 0.5) * 50;
-      this.scene.enemies.push(minion);
+    // 在Boss當前位置召喚3-7隻小怪
+    if (!this.scene || !this.scene.spawnLocalEnemy) return;
+    if (this.pathIndex >= this.path.length) return;
+
+    const minionCount = Math.floor(Math.random() * 5) + 3; // 3-7隻
+
+    for (let i = 0; i < minionCount; i++) {
+      const minion = this.scene.spawnLocalEnemy({ isBoss: false });
+      if (!minion) continue;
+
+      // 設置小怪從Boss當前位置開始
+      minion.pathIndex = Math.min(this.pathIndex, minion.path.length - 1);
+
+      // 計算小怪在Boss附近的隨機位置
+      const offsetX = (Math.random() - 0.5) * 80;
+      const offsetY = (Math.random() - 0.5) * 80;
+
+      if (minion.pathIndex < minion.path.length) {
+        const currentPathPoint = minion.path[minion.pathIndex];
+        minion.x = currentPathPoint.x + offsetX;
+        minion.y = currentPathPoint.y + offsetY;
+
+        // 更新召喚小怪的視覺位置
+        if (minion.sprite) {
+          minion.sprite.setPosition(minion.x, minion.y);
+        }
+        if (minion.healthBar) {
+          minion.healthBar.setPosition(minion.x, minion.y - 20);
+        }
+        if (minion.healthBarBg) {
+          minion.healthBarBg.setPosition(minion.x, minion.y - 20);
+        }
+        if (minion.abilityIndicators) {
+          minion.abilityIndicators.forEach((indicator, index) => {
+            indicator.setPosition(minion.x + 15 + (index * 25), minion.y - 15);
+          });
+        }
+      }
     }
   }
 
@@ -541,21 +720,42 @@ export default class Enemy {
   }
 
   performLeap() {
-    // 向前跳3-5個路徑點
-    const leapDistance = Math.floor(Math.random() * 3) + 3;
-    this.pathIndex = Math.min(this.pathIndex + leapDistance, this.path.length - 1);
+    // 向前跳25-50個路徑點（5倍距離）
+    const leapDistance = Math.floor(Math.random() * 26) + 25; // 25-50
+    const newPathIndex = Math.min(this.pathIndex + leapDistance, this.path.length - 1);
 
-    if (this.pathIndex < this.path.length) {
-      const targetPoint = this.path[this.pathIndex];
+    if (newPathIndex > this.pathIndex && newPathIndex < this.path.length) {
+      const targetPoint = this.path[newPathIndex];
+      const oldX = this.x;
+      const oldY = this.y;
 
-      // 跳躍動畫
+      // 立即更新pathIndex
+      this.pathIndex = newPathIndex;
+
+      // 跳躍動畫：快速移動到目標點
       this.scene.tweens.add({
         targets: this,
         x: targetPoint.x,
         y: targetPoint.y,
-        duration: 300,
-        ease: 'Power2'
+        duration: 200, // 縮短動畫時間讓跳躍更明顯
+        ease: 'Cubic.easeOut',
+        onUpdate: () => {
+          // 動畫過程中更新視覺位置
+          this.updateVisuals();
+        }
       });
+
+      // 跳躍特效：在起點產生粒子
+      if (this.scene.add && this.scene.add.particles) {
+        const particles = this.scene.add.particles(oldX, oldY, 'particle', {
+          speed: { min: 50, max: 100 },
+          scale: { start: 0.5, end: 0 },
+          tint: 0xFFFF00,
+          lifespan: 300,
+          quantity: 10
+        });
+        this.scene.time.delayedCall(300, () => particles.destroy());
+      }
     }
   }
 

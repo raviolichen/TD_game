@@ -258,10 +258,10 @@ export function getTowerRecipe(towerType) {
   return TowerConfig[towerType]?.recipe || null;
 }
 
-// 檢查是否可以合成
+// 檢查是否可以合成（只匹配兩塔配方）
 export function canCraftTower(tower1Type, tower2Type) {
   for (const [towerType, config] of Object.entries(TowerConfig)) {
-    if (config.recipe) {
+    if (config.recipe && config.recipe.length === 2) {
       const [req1, req2] = config.recipe;
       if ((tower1Type === req1 && tower2Type === req2) ||
           (tower1Type === req2 && tower2Type === req1)) {

@@ -3,6 +3,12 @@ import Enemy from '../entities/Enemy.js';
 import { TowerConfig, TowerTypes, canCraftTower, canCraftThreeTowers } from '../config/towerConfig.js';
 import SocketService from '../services/SocketService.js';
 
+// 遊戲配置參數
+const BOSS_WAVE_INTERVAL = 10; // 每幾波出現一次Boss
+const BASE_ENEMY_COUNT = 20; // 每波基礎怪物數量
+const ENEMY_COUNT_PER_10_WAVES_MIN = 3; // 每10波增加的最少怪物數量
+const ENEMY_COUNT_PER_10_WAVES_MAX = 7; // 每10波增加的最多怪物數量
+
 export default class GameScene extends Phaser.Scene {
   constructor() {
     super({ key: 'GameScene' });
@@ -62,6 +68,7 @@ export default class GameScene extends Phaser.Scene {
     this.remoteEnemiesById = new Map();
     this.stateSyncInterval = null;
     this.lastStateBroadcastHadEnemies = false;
+    this.enemyIncreasePerTenWaves = {}; // 記錄每10波增加的怪物數量
   }
 
   preload() {
@@ -1600,6 +1607,10 @@ ${config.name}`);
       this.towers.forEach(tower => tower.update(time, this.enemies, auraBonus));
     }
 
+    // 保存filter前的陣列長度，用於檢測在filter過程中是否有新敵人被加入
+    const beforeFilterCount = this.enemies.length;
+    const originalEnemies = this.enemies; // 保存原始引用
+
     this.enemies = this.enemies.filter(enemy => {
       if (enemy.active) {
         enemy.update(delta, auraBonus);
@@ -1607,6 +1618,17 @@ ${config.name}`);
       }
       return false;
     });
+
+    // 修復：如果在filter過程中有新敵人被加入（例如Boss召喚小怪），
+    // 這些新敵人不會被filter處理，需要手動加回結果陣列
+    if (originalEnemies.length > beforeFilterCount) {
+      const newEnemies = originalEnemies.slice(beforeFilterCount);
+      newEnemies.forEach(enemy => {
+        if (enemy.active) {
+          this.enemies.push(enemy);
+        }
+      });
+    }
     this.updateProjectiles(delta);
     if (this.gameMode === 'multiplayer') {
       this.updateGhostEnemies(delta);
@@ -2021,7 +2043,7 @@ ${config.emoji} ${config.name}
     this.wave++;
     this.updateUI();
 
-    const isBossWave = (this.wave % 10 === 0);
+    const isBossWave = (this.wave % BOSS_WAVE_INTERVAL === 0);
     let nextDelay = 30000;
 
     if (isBossWave) {
@@ -2033,20 +2055,61 @@ ${config.emoji} ${config.name}
         this.spawnLocalEnemy({ isBoss: true });
       });
     } else {
-      let enemyCount = 10 + this.wave * 4;
+      // 基礎怪物數量：每10波增加一次（隨機3-7隻）
+      const bonusRounds = Math.floor(this.wave / BOSS_WAVE_INTERVAL);
+
+      // 計算累積增加的怪物數量
+      let totalIncrease = 0;
+      for (let i = 1; i <= bonusRounds; i++) {
+        const roundKey = i * BOSS_WAVE_INTERVAL;
+        // 如果這個10波還沒有隨機過，就隨機一次並記錄
+        if (!this.enemyIncreasePerTenWaves[roundKey]) {
+          this.enemyIncreasePerTenWaves[roundKey] = Math.floor(
+            Math.random() * (ENEMY_COUNT_PER_10_WAVES_MAX - ENEMY_COUNT_PER_10_WAVES_MIN + 1)
+          ) + ENEMY_COUNT_PER_10_WAVES_MIN;
+        }
+        totalIncrease += this.enemyIncreasePerTenWaves[roundKey];
+      }
+
+      const baseEnemyCount = BASE_ENEMY_COUNT + totalIncrease;
+      let totalEnemyCount = baseEnemyCount;
+
+      // 計算每10波後的間隔縮短（每10波縮短100ms，最低400ms）
+      const spawnInterval = Math.max(400, 1000 - bonusRounds * 100);
+
       if (this.gameMode === 'singlePlayer' && this.bossDefeated) {
-        enemyCount += this.bonusEnemiesPerWave;
-        this.showMessage(`🌊 第 ${this.wave} 波來襲！(+${this.bonusEnemiesPerWave} 額外怪物)`, 0xFF6B6B);
+        totalEnemyCount += this.bonusEnemiesPerWave;
+        this.showMessage(`🌊 第 ${this.wave} 波來襲！(+${this.bonusEnemiesPerWave} 額外怪物) [間隔${spawnInterval}ms]`, 0xFF6B6B);
       } else {
         this.showMessage(`🌊 第 ${this.wave} 波來襲！`);
       }
-      nextDelay = (enemyCount + 10) * 1000;
-      for (let i = 0; i < enemyCount; i++) {
-        this.time.delayedCall(i * 1000, () => {
+
+      // 生成隨機生怪時間序列
+      const spawnTimes = [];
+      for (let i = 0; i < totalEnemyCount; i++) {
+        spawnTimes.push(i * spawnInterval);
+      }
+
+      // 如果有額外怪物，將它們隨機插入到現有時間點（允許同時生多個）
+      if (this.gameMode === 'singlePlayer' && this.bossDefeated && this.bonusEnemiesPerWave > 0) {
+        for (let i = 0; i < this.bonusEnemiesPerWave; i++) {
+          // 隨機選擇一個已存在的時間點，讓額外怪和基礎怪同時生成
+          const randomIndex = Math.floor(Math.random() * baseEnemyCount);
+          spawnTimes[baseEnemyCount + i] = randomIndex * spawnInterval;
+        }
+        // 重新排序確保按時間順序生怪
+        spawnTimes.sort((a, b) => a - b);
+      }
+
+      nextDelay = (totalEnemyCount * spawnInterval / 1000 + 10) * 1000;
+
+      // 根據時間序列生怪
+      spawnTimes.forEach(delay => {
+        this.time.delayedCall(delay, () => {
           if (this.isGameOver || this.matchEnded) return;
           this.spawnLocalEnemy({ isBoss: false });
         });
-      }
+      });
     }
 
     if (this.gameMode === 'singlePlayer') {
