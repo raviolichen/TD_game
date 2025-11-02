@@ -12,11 +12,23 @@ export default class Enemy {
     // 根據波數調整屬性
     let baseHealth = 100 + (waveNumber * 25); // 血量成長速度提升25%
 
-    // 每N波額外增加30-50%血量
-    const tenWaveMultiplier = Math.floor(waveNumber / HEALTH_BONUS_WAVE_INTERVAL);
-    if (tenWaveMultiplier > 0) {
-      const bonusPercent = 0.3 + (Math.random() * 0.2); // 30%-50%
-      baseHealth *= (1 + (bonusPercent * tenWaveMultiplier));
+    // 100波之前：每N波額外增加30-50%血量
+    if (waveNumber <= 100) {
+      const tenWaveMultiplier = Math.floor(waveNumber / HEALTH_BONUS_WAVE_INTERVAL);
+      if (tenWaveMultiplier > 0) {
+        const bonusPercent = 0.3 + (Math.random() * 0.2); // 30%-50%
+        baseHealth *= (1 + (bonusPercent * tenWaveMultiplier));
+      }
+    } else {
+      // 100波之後：每波血量翻倍
+      const wavesAfter100 = waveNumber - 100;
+      // 先計算100波時的血量
+      const wave100Health = 100 + (100 * 25);
+      const tenWaveMultiplier = Math.floor(100 / HEALTH_BONUS_WAVE_INTERVAL);
+      const bonusPercent = 0.4; // 使用平均值40%
+      const wave100Base = wave100Health * (1 + (bonusPercent * tenWaveMultiplier));
+      // 每超過100波一波，血量翻倍
+      baseHealth = wave100Base * Math.pow(2, wavesAfter100);
     }
 
     // 前5波血量調整：第1波-50%, 第2波-40%, 第3波-30%, 第4波-20%, 第5波-10%
@@ -166,9 +178,10 @@ export default class Enemy {
     // 計算當前速度 (考慮減速效果和光環效果)
     let currentSpeed = this.speed;
 
-    // 應用光環減速
+    // 應用光環減速（最多減速至1%速度）
     if (auraBonus && auraBonus.enemySlowBonus > 0) {
-      currentSpeed *= (1 - auraBonus.enemySlowBonus);
+      const slowAmount = Math.min(auraBonus.enemySlowBonus, 0.99); // 最多減速99%
+      currentSpeed *= (1 - slowAmount);
     }
 
     if (this.effects.frozen.active) {
