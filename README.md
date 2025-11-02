@@ -14,7 +14,7 @@ A cute pixel-art style tower defense game built with the Phaser 3 game engine an
   - **4 Base Towers**: Arrow, Fire, Ice, and Magic.
   - **5 Tier-2 Crafted Towers**: Including the high-speed Machine Gun Tower, the AoE Rocket Tower, and more.
   - **3 Ultimate Crafted Towers**: The devastating Ultimate Cannon, Frost Fortress, and Chaos Array.
-  - **1 Super Ultimate Aura Tower**: Provides global buffs to all your towers.
+  - **1 Super Ultimate Aura Tower**: Requires 3 ultimate towers to craft. Provides global buffs to all your towers. Multiple aura towers stack!
 
 - **🔄 Tower Crafting & Upgrading**
   - **Crafting**: Combine two or three specific towers to create a more powerful, high-tier tower.
@@ -23,6 +23,8 @@ A cute pixel-art style tower defense game built with the Phaser 3 game engine an
 - **👾 Diverse Enemy Waves**
   - Normal waves get progressively stronger.
   - A powerful **BOSS** appears every 10 waves, granting special rewards upon defeat.
+  - After wave 11, minions gain random abilities (speed boost, leap, defense, freeze towers).
+  - After wave 100, enemy health doubles every wave (exponential growth)!
 
 - **✨ Gorgeous Visual Effects**
   - Each tower has unique attack, hit, and upgrade effects.
@@ -107,7 +109,7 @@ Make sure you have [Node.js](https://nodejs.org/) installed (version 18.x or hig
   - **4種基礎塔**: 箭塔、火焰塔、冰霜塔、魔法塔。
   - **5種中階合成塔**: 如高射速的機槍塔、範圍傷害的火箭塔等。
   - **3種終極合成塔**: 擁有毀滅性力量的終極炮塔、極寒要塞、混沌法陣。
-  - **1種超終極光環塔**: 為全地圖的塔提供增益效果。
+  - **1種超終極光環塔**: 需3座終極塔合成。為全地圖的塔提供增益效果。多座光環塔效果可疊加！
 
 - **🔄 塔的合成與升級**
   - **合成**: 將兩座或三座指定的塔合成為更強大的高階塔。
@@ -116,6 +118,8 @@ Make sure you have [Node.js](https://nodejs.org/) installed (version 18.x or hig
 - **👾 多樣的敵人波次**
   - 普通波次隨時間增強。
   - 每10波會出現強大的 **BOSS**，擊敗後有特殊獎勵。
+  - 第11波起，小怪開始獲得隨機技能（加速、跳躍、防禦、凍結塔）。
+  - 第100波後，怪物血量每波翻倍（指數成長）！
 
 - **✨ 華麗的視覺特效**
   - 每種塔都有獨特的攻擊、命中和升級特效。
