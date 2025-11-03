@@ -12,14 +12,23 @@ export const TowerTypes = {
   FREEZE_CANNON: 'freezeCannon',
   LIGHTNING: 'lightning',
   POISON: 'poison',
+  SNIPER: 'sniper',
+  TRAP: 'trap',
+  STEAM: 'steam',
 
   // 終極塔
   ULTIMATE_CANNON: 'ultimateCannon',
   FROST_FORTRESS: 'frostFortress',
   CHAOS_ARRAY: 'chaosArray',
+  SOLAR_FLARE: 'solarFlare',
+  ARMOR_BREAKER: 'armorBreaker',
+  MONEY: 'money',
+  STEAM_CANNON: 'steamCannon',
 
   // 超終極塔
-  AURA_TOWER: 'auraTower'
+  AURA_TOWER: 'auraTower',
+  STEAM_FACTORY: 'steamFactory',
+  METEOR_TOWER: 'meteorTower'
 };
 
 export const TowerConfig = {
@@ -172,6 +181,55 @@ export const TowerConfig = {
     recipe: [TowerTypes.FIRE, TowerTypes.MAGIC]
   },
 
+  [TowerTypes.SNIPER]: {
+    name: '狙擊塔',
+    emoji: '🎯',
+    tier: 2,
+    cost: 280,
+    damage: 70,
+    range: 220,
+    fireRate: 2500,
+    projectileSpeed: 600,
+    description: '超遠射程精準狙擊',
+    color: 0x2F4F4F,
+    effectColor: 0xFF0000,
+    recipe: [TowerTypes.ARROW, TowerTypes.MAGIC]
+  },
+
+  [TowerTypes.TRAP]: {
+    name: '陷阱塔',
+    emoji: '💣',
+    tier: 2,
+    cost: 260,
+    damage: 25,
+    range: 180,
+    fireRate: 3000,
+    projectileSpeed: 250,
+    trapDuration: 20000,
+    maxTraps: 4,
+    description: '隨機投放各種效果陷阱',
+    color: 0x8B4513,
+    effectColor: 0xFFFF00,
+    recipe: [TowerTypes.MAGIC, TowerTypes.ICE]
+  },
+
+  [TowerTypes.STEAM]: {
+    name: '蒸氣塔',
+    emoji: '🌊',
+    tier: 2,
+    cost: 270,
+    damage: 30,
+    knockback: 40,
+    splashRadius: 70,
+    range: 140,
+    fireRate: 1400,
+    projectileSpeed: 300,
+    description: '蒸汽爆炸範圍擊退',
+    color: 0xB0E0E6,
+    effectColor: 0xF0F8FF,
+    recipe: [TowerTypes.ICE, TowerTypes.FIRE]
+  },
+
   // 終極塔配置
   [TowerTypes.ULTIMATE_CANNON]: {
     name: '終極炮塔',
@@ -232,6 +290,80 @@ export const TowerConfig = {
     recipe: [TowerTypes.POISON, TowerTypes.LIGHTNING]
   },
 
+  [TowerTypes.SOLAR_FLARE]: {
+    name: '太陽炎塔',
+    emoji: '☀️',
+    tier: 3,
+    cost: 620,
+    damage: 45,
+    groundFireDamage: 20,
+    groundFireDuration: 6000,
+    groundFireRadius: 100,
+    maxGroundFires: 3,
+    range: 180,
+    fireRate: 2000,
+    projectileSpeed: 350,
+    description: '地面持續火焰區域',
+    color: 0xFF4500,
+    effectColor: 0xFFD700,
+    recipe: [TowerTypes.ROCKET, TowerTypes.POISON]
+  },
+
+  [TowerTypes.ARMOR_BREAKER]: {
+    name: '破甲塔',
+    emoji: '🗡️',
+    tier: 3,
+    cost: 650,
+    damage: 40,
+    percentDamage: 0.06,
+    chainCount: 3,
+    chainRange: 100,
+    chainPercentDecay: 0.5,
+    range: 190,
+    fireRate: 1500,
+    projectileSpeed: 500,
+    description: '最大血量6%真傷 連鎖遞減',
+    color: 0x8B0000,
+    effectColor: 0xFF0000,
+    recipe: [TowerTypes.SNIPER, TowerTypes.LIGHTNING]
+  },
+
+  [TowerTypes.MONEY]: {
+    name: '金錢塔',
+    emoji: '💰',
+    tier: 3,
+    cost: 550,
+    damage: 50,
+    goldMultiplier: 1.5,
+    goldAuraRange: 150,
+    goldAuraBonus: 0.25,
+    range: 210,
+    fireRate: 1400,
+    projectileSpeed: 450,
+    description: '超遠射程 擊殺金幣x1.5 範圍增益',
+    color: 0xFFD700,
+    effectColor: 0xFFA500,
+    recipe: [TowerTypes.SNIPER, TowerTypes.TRAP]
+  },
+
+  [TowerTypes.STEAM_CANNON]: {
+    name: '蒸汽炮塔',
+    emoji: '💨',
+    tier: 3,
+    cost: 600,
+    damage: 60,
+    knockback: 70,
+    splashRadius: 100,
+    knockbackSplash: true,
+    range: 220,
+    fireRate: 1600,
+    projectileSpeed: 500,
+    description: '超遠距離範圍蒸汽擊退',
+    color: 0x87CEEB,
+    effectColor: 0xF0F8FF,
+    recipe: [TowerTypes.STEAM, TowerTypes.SNIPER]
+  },
+
   // 超終極塔配置
   [TowerTypes.AURA_TOWER]: {
     name: '光環塔',
@@ -250,6 +382,48 @@ export const TowerConfig = {
     color: 0xFFD700,
     effectColor: 0xFFFFFF,
     recipe: [TowerTypes.ULTIMATE_CANNON, TowerTypes.FROST_FORTRESS, TowerTypes.CHAOS_ARRAY] // 三塔合成
+  },
+
+  [TowerTypes.STEAM_FACTORY]: {
+    name: '蒸汽工廠',
+    emoji: '🏭',
+    tier: 4,
+    cost: 2500,
+    damage: 50,
+    range: 230,
+    fireRate: 1200,
+    projectileSpeed: 550,
+    knockback: 80,
+    splashRadius: 110,
+    isAura: true,
+    goldBonus: 0.10, // 每等級+10%金幣
+    truePercentDamage: 0.03, // 每等級+3%最大血量真傷
+    description: '全地圖：金幣+10%/等 真傷+3%/等 蒸汽擊退',
+    color: 0xCD7F32,
+    effectColor: 0xC0C0C0,
+    recipe: [TowerTypes.MONEY, TowerTypes.STEAM_CANNON, TowerTypes.ARMOR_BREAKER]
+  },
+
+  [TowerTypes.METEOR_TOWER]: {
+    name: '隕石塔',
+    emoji: '☄️',
+    tier: 4,
+    cost: 2800,
+    damage: 80,
+    range: 0, // 全地圖攻擊
+    fireRate: 3000,
+    projectileSpeed: 800,
+    meteorCountMin: 3,
+    meteorCountMax: 5,
+    meteorSplashRadius: 80,
+    groundFireDamage: 15,
+    groundFireDuration: 7000,
+    groundFireRadius: 90,
+    maxGroundFires: 10,
+    description: '全地圖隨機隕石轟炸 留下持續火焰',
+    color: 0xFF4500,
+    effectColor: 0xFF8C00,
+    recipe: [TowerTypes.SOLAR_FLARE, TowerTypes.ULTIMATE_CANNON, TowerTypes.CHAOS_ARRAY]
   }
 };
 

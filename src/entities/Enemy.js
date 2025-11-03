@@ -46,6 +46,7 @@ export default class Enemy {
     this.active = true;
     this.x = path[0].x;
     this.y = path[0].y;
+    this.lastHitByTower = null; // 追蹤最後擊中此怪物的塔
 
     // Boss技能系統
     this.bossAbilities = [];
@@ -474,10 +475,7 @@ export default class Enemy {
 
     this.scene.time.delayedCall(500, () => particles.destroy());
 
-    // 給予玩家金錢
-    if (this.scene.addGold) {
-      this.scene.addGold(this.reward);
-    }
+    // 金幣獎勵已經在 onEnemyDied 中處理（包含加成計算）
 
     // 如果是Boss，觸發Boss擊敗獎勵
     if (this.isBoss && this.scene.onBossDefeated) {

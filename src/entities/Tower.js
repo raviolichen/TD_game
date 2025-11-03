@@ -105,6 +105,21 @@ export default class Tower {
       return; // 被凍結時不攻擊
     }
 
+    // 隕石塔特殊處理（全地圖攻擊，不需要目標）
+    if (this.config.meteorCountMin && this.config.meteorCountMax) {
+      // 計算實際攻速
+      let actualFireRate = this.config.fireRate;
+      if (auraBonus && auraBonus.attackSpeedBonus > 0) {
+        actualFireRate = this.config.fireRate / (1 + auraBonus.attackSpeedBonus);
+      }
+
+      if (time > this.lastFired + actualFireRate) {
+        this.fireMeteors(auraBonus);
+        this.lastFired = time;
+      }
+      return;
+    }
+
     // 尋找目標
     if (!this.target || !this.target.active || !this.isInRange(this.target)) {
       this.target = this.findTarget(enemies);
@@ -122,6 +137,22 @@ export default class Tower {
       this.fire(auraBonus);
       this.lastFired = time;
     }
+  }
+
+  fireMeteors(auraBonus = null) {
+    // 計算隕石數量
+    const count = Phaser.Math.Between(
+      this.config.meteorCountMin,
+      this.config.meteorCountMax
+    );
+
+    // 通知場景創建隕石
+    if (this.scene.createMeteorStrike) {
+      this.scene.createMeteorStrike(count, this.config, this, auraBonus);
+    }
+
+    // 播放發射動畫
+    this.playFireAnimation();
   }
 
   findTarget(enemies) {
@@ -176,6 +207,7 @@ export default class Tower {
       damage: actualDamage,
       towerType: this.type,
       config: this.config,
+      sourceTower: this, // 添加來源塔引用
       graphic: null
     };
 

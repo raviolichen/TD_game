@@ -28,6 +28,7 @@ export default class GameScene extends Phaser.Scene {
     this.opponentTowers = [];
     this.enemies = [];
     this.projectiles = [];
+    this.groundFires = []; // 地面火焰區域
     this.selectedTower = null;
     this.selectedTowerObject = null;
     this.previewTower = null;
@@ -674,6 +675,16 @@ export default class GameScene extends Phaser.Scene {
     if (enemy.enemyId && this.localEnemiesById.has(enemy.enemyId)) {
       this.localEnemiesById.delete(enemy.enemyId);
     }
+
+    // 計算並給予金幣獎勵（包含加成）
+    if (enemy.reward) {
+      const goldBonus = this.calculateGoldBonus(enemy);
+      const finalGold = Math.round(enemy.reward * (1 + goldBonus));
+      if (this.addGold) {
+        this.addGold(finalGold);
+      }
+    }
+
     if (this.gameMode === 'multiplayer' && !this.matchEnded && enemy.owner !== 'opponent' && enemy.enemyId && SocketService.socket && this.roomId) {
       SocketService.emit('enemy-died', {
         roomId: this.roomId,
@@ -681,6 +692,39 @@ export default class GameScene extends Phaser.Scene {
         ownerId: this.localPlayerId || SocketService.id
       });
     }
+  }
+
+  calculateGoldBonus(enemy) {
+    let totalBonus = 0;
+    const killerTower = enemy.lastHitByTower;
+
+    // 計算全局金幣加成（蒸汽工廠 + 光環塔等）
+    this.playerTowers.forEach(tower => {
+      if (tower.config.goldBonus) {
+        totalBonus += tower.config.goldBonus * tower.level;
+      }
+    });
+
+    // 金錢塔自身擊殺加成
+    if (killerTower && killerTower.config.goldMultiplier) {
+      totalBonus += (killerTower.config.goldMultiplier - 1); // 例如 1.5 變成 +0.5 (50%)
+    }
+
+    // 金錢塔光環範圍加成
+    if (killerTower) {
+      this.playerTowers.forEach(tower => {
+        if (tower.config.goldAuraRange && tower.config.goldAuraBonus) {
+          const distance = Phaser.Math.Distance.Between(
+            killerTower.x, killerTower.y, tower.x, tower.y
+          );
+          if (distance <= tower.config.goldAuraRange) {
+            totalBonus += tower.config.goldAuraBonus;
+          }
+        }
+      });
+    }
+
+    return totalBonus;
   }
 
   onEnemyEscaped(enemy) {
@@ -1630,6 +1674,7 @@ ${config.name}`);
       });
     }
     this.updateProjectiles(delta);
+    this.updateGroundFires(delta);
     if (this.gameMode === 'multiplayer') {
       this.updateGhostEnemies(delta);
     }
@@ -2182,16 +2227,335 @@ ${randomTower.config.emoji} 升至Lv.${randomTower.level}
   handleProjectileHit(projectile) {
     const target = projectile.target;
     const config = projectile.config;
+
+    // 記錄最後擊中此怪物的塔（用於金幣加成計算）
+    if (projectile.sourceTower) {
+      target.lastHitByTower = projectile.sourceTower;
+    }
+
+    // 基礎傷害
     target.takeDamage(projectile.damage);
+
+    // 百分比真實傷害
+    if (config.percentDamage) {
+      const percentDmg = target.maxHealth * config.percentDamage;
+      target.takeDamage(percentDmg);
+      // 顯示特殊傷害數字
+      this.showPercentDamageText(target.x, target.y, percentDmg);
+    }
+
     if (config.dotDamage) target.applyBurn(config.dotDamage, config.dotDuration);
     if (config.poisonDamage) target.applyPoison(config.poisonDamage, config.poisonDuration);
     if (config.slow) target.applySlow(config.slow, config.slowDuration);
     if (config.freeze) target.applyFreeze(config.freezeDuration);
+
+    // 擊退效果
+    if (config.knockback) {
+      if (config.knockbackSplash && config.splashRadius) {
+        // 範圍擊退
+        this.applyKnockbackSplash(projectile.x, projectile.y, config);
+      } else {
+        // 單體擊退
+        this.applyKnockback(target, projectile.x, projectile.y, config.knockback);
+      }
+    }
+
     if (config.splashRadius) this.applySplashDamage(projectile.x, projectile.y, config);
     if (config.chainCount) this.applyLightningChain(target, config);
+
+    // 地面火焰區域
+    if (config.groundFireDamage && config.groundFireDuration) {
+      this.createGroundFire(projectile.x, projectile.y, config, projectile.sourceTower);
+    }
+
     this.createHitEffect(projectile.x, projectile.y, config.effectColor);
     projectile.graphic.destroy();
     if (projectile.glow) projectile.glow.destroy();
+  }
+
+  showPercentDamageText(x, y, amount) {
+    const damageText = this.add.text(x + 20, y - 30, `-${Math.floor(amount)}%`, {
+      fontSize: '14px',
+      color: '#FF4500',
+      fontStyle: 'bold',
+      stroke: '#8B0000',
+      strokeThickness: 3
+    }).setOrigin(0.5);
+    damageText.setDepth(60);
+
+    this.tweens.add({
+      targets: damageText,
+      y: y - 60,
+      alpha: 0,
+      duration: 1000,
+      ease: 'Power2',
+      onComplete: () => damageText.destroy()
+    });
+  }
+
+  applyKnockback(enemy, fromX, fromY, knockbackDistance) {
+    if (!enemy.active) return;
+
+    // 計算擊退方向（從攻擊點指向敵人）
+    const angle = Math.atan2(enemy.y - fromY, enemy.x - fromX);
+    const knockbackX = Math.cos(angle) * knockbackDistance;
+    const knockbackY = Math.sin(angle) * knockbackDistance;
+
+    // 應用擊退，並確保不會推出地圖邊界
+    const newX = Math.max(0, Math.min(this.cameras.main.width, enemy.x + knockbackX));
+    const newY = Math.max(0, Math.min(this.cameras.main.height, enemy.y + knockbackY));
+
+    // 使用tween實現平滑的擊退動畫
+    this.tweens.add({
+      targets: enemy,
+      x: newX,
+      y: newY,
+      duration: 200,
+      ease: 'Power2'
+    });
+
+    // 創建蒸汽特效
+    this.createSteamEffect(enemy.x, enemy.y);
+  }
+
+  applyKnockbackSplash(x, y, config) {
+    this.enemies.forEach(enemy => {
+      if (!enemy.active) return;
+      const distance = Phaser.Math.Distance.Between(x, y, enemy.x, enemy.y);
+      if (distance <= config.splashRadius) {
+        this.applyKnockback(enemy, x, y, config.knockback);
+      }
+    });
+  }
+
+  createSteamEffect(x, y) {
+    // 蒸汽粒子效果
+    const particles = this.add.particles(x, y, 'particle', {
+      speed: { min: 30, max: 60 },
+      scale: { start: 1, end: 0 },
+      alpha: { start: 0.6, end: 0 },
+      tint: [0xF0F8FF, 0xE0FFFF, 0x87CEEB],
+      lifespan: 400,
+      quantity: 8,
+      blendMode: 'NORMAL'
+    });
+    particles.setDepth(55);
+
+    this.time.delayedCall(400, () => particles.destroy());
+  }
+
+  createGroundFire(x, y, config, sourceTower) {
+    // 檢查是否超過最大火焰區域數量
+    if (sourceTower && config.maxGroundFires) {
+      const towerFires = this.groundFires.filter(f => f.sourceTower === sourceTower);
+      if (towerFires.length >= config.maxGroundFires) {
+        // 移除最舊的火焰
+        const oldestFire = towerFires[0];
+        this.removeGroundFire(oldestFire);
+      }
+    }
+
+    const radius = config.groundFireRadius || 100;
+    const duration = config.groundFireDuration || 5000;
+    const damage = config.groundFireDamage || 10;
+
+    // 創建火焰視覺效果
+    const fireCircle = this.add.circle(x, y, radius, 0xFF4500, 0.3);
+    fireCircle.setStrokeStyle(3, 0xFF0000, 0.8);
+    fireCircle.setDepth(15);
+
+    // 火焰emoji裝飾
+    const fireEmoji = this.add.text(x, y, '🔥', {
+      fontSize: '32px'
+    }).setOrigin(0.5);
+    fireEmoji.setDepth(16);
+
+    // 創建持續的火焰粒子
+    const fireParticles = this.add.particles(x, y, 'particle', {
+      speed: { min: 20, max: 40 },
+      scale: { start: 0.8, end: 0 },
+      alpha: { start: 0.8, end: 0 },
+      tint: [0xFF4500, 0xFF6347, 0xFFD700],
+      lifespan: 600,
+      frequency: 100,
+      blendMode: 'ADD'
+    });
+    fireParticles.setDepth(16);
+
+    const groundFire = {
+      x,
+      y,
+      radius,
+      damage,
+      damageInterval: 500, // 每0.5秒造成一次傷害
+      lastDamageTime: Date.now(),
+      duration,
+      createdAt: Date.now(),
+      circle: fireCircle,
+      emoji: fireEmoji,
+      particles: fireParticles,
+      sourceTower
+    };
+
+    this.groundFires.push(groundFire);
+  }
+
+  updateGroundFires(delta) {
+    const currentTime = Date.now();
+
+    this.groundFires = this.groundFires.filter(fire => {
+      const elapsed = currentTime - fire.createdAt;
+
+      // 檢查是否過期
+      if (elapsed >= fire.duration) {
+        this.removeGroundFire(fire);
+        return false;
+      }
+
+      // 對範圍內的敵人造成傷害
+      if (currentTime - fire.lastDamageTime >= fire.damageInterval) {
+        this.enemies.forEach(enemy => {
+          if (!enemy.active) return;
+          const distance = Phaser.Math.Distance.Between(fire.x, fire.y, enemy.x, enemy.y);
+          if (distance <= fire.radius) {
+            enemy.takeDamage(fire.damage);
+            enemy.createBurnParticles(); // 顯示燃燒特效
+          }
+        });
+        fire.lastDamageTime = currentTime;
+      }
+
+      // 更新視覺效果（脈動動畫）
+      const progress = elapsed / fire.duration;
+      fire.circle.setAlpha(0.3 * (1 - progress * 0.5));
+
+      return true;
+    });
+  }
+
+  removeGroundFire(fire) {
+    if (fire.circle) fire.circle.destroy();
+    if (fire.emoji) fire.emoji.destroy();
+    if (fire.particles) fire.particles.destroy();
+  }
+
+  createMeteorStrike(count, config, sourceTower, auraBonus) {
+    // 獲取路徑點
+    const path = this.gameMode === 'multiplayer' ? this.playerPath : this.path;
+    if (!path || path.length === 0) return;
+
+    for (let i = 0; i < count; i++) {
+      // 在路徑上隨機選擇一個位置
+      const randomIndex = Phaser.Math.Between(0, path.length - 1);
+      const targetPoint = path[randomIndex];
+
+      // 添加一些隨機偏移
+      const offsetX = Phaser.Math.Between(-50, 50);
+      const offsetY = Phaser.Math.Between(-50, 50);
+      const x = targetPoint.x + offsetX;
+      const y = targetPoint.y + offsetY;
+
+      // 延遲召喚隕石（讓它們不要同時落下）
+      this.time.delayedCall(i * 150, () => {
+        this.spawnMeteor(x, y, config, sourceTower, auraBonus);
+      });
+    }
+  }
+
+  spawnMeteor(x, y, config, sourceTower, auraBonus) {
+    // 創建隕石視覺效果（從上方快速墜落）
+    const startY = -100;
+    const meteorEmoji = this.add.text(x, startY, '☄️', {
+      fontSize: '48px'
+    }).setOrigin(0.5);
+    meteorEmoji.setDepth(100);
+
+    // 創建尾焰粒子
+    const trailParticles = this.add.particles(x, startY, 'particle', {
+      speed: { min: 50, max: 100 },
+      scale: { start: 1.5, end: 0 },
+      alpha: { start: 0.8, end: 0 },
+      tint: [0xFF4500, 0xFF6347, 0xFFD700],
+      lifespan: 300,
+      frequency: 50,
+      blendMode: 'ADD'
+    });
+    trailParticles.setDepth(99);
+
+    // 隕石墜落動畫
+    this.tweens.add({
+      targets: [meteorEmoji],
+      y: y,
+      duration: 800,
+      ease: 'Power3',
+      onUpdate: (tween) => {
+        // 粒子跟隨隕石
+        trailParticles.setPosition(meteorEmoji.x, meteorEmoji.y);
+      },
+      onComplete: () => {
+        // 隕石撞擊
+        trailParticles.destroy();
+        meteorEmoji.destroy();
+
+        // 計算實際傷害（應用光環加成）
+        let actualDamage = config.damage;
+        if (auraBonus && auraBonus.damageBonus > 0) {
+          actualDamage = config.damage * (1 + auraBonus.damageBonus);
+        }
+
+        // 撞擊傷害
+        this.enemies.forEach(enemy => {
+          if (!enemy.active) return;
+          const distance = Phaser.Math.Distance.Between(x, y, enemy.x, enemy.y);
+          if (distance <= config.meteorSplashRadius) {
+            enemy.takeDamage(actualDamage);
+            if (sourceTower) {
+              enemy.lastHitByTower = sourceTower;
+            }
+          }
+        });
+
+        // 創建爆炸特效
+        this.createMeteorExplosion(x, y, config);
+
+        // 留下地面火焰
+        if (config.groundFireDamage) {
+          this.createGroundFire(x, y, config, sourceTower);
+        }
+      }
+    });
+  }
+
+  createMeteorExplosion(x, y, config) {
+    // 爆炸圈
+    const explosionRing = this.add.circle(x, y, 20, 0xFF4500, 0.8);
+    explosionRing.setDepth(55);
+
+    this.tweens.add({
+      targets: explosionRing,
+      radius: config.meteorSplashRadius,
+      alpha: 0,
+      duration: 500,
+      ease: 'Power2',
+      onComplete: () => explosionRing.destroy()
+    });
+
+    // 爆炸粒子
+    const explosionParticles = this.add.particles(x, y, 'particle', {
+      speed: { min: 100, max: 300 },
+      scale: { start: 2, end: 0 },
+      alpha: { start: 1, end: 0 },
+      tint: [0xFF4500, 0xFF6347, 0xFFD700, 0xFF8C00],
+      lifespan: 800,
+      quantity: 30,
+      blendMode: 'ADD'
+    });
+    explosionParticles.setDepth(60);
+
+    this.time.delayedCall(800, () => explosionParticles.destroy());
+
+    // 震動效果
+    this.cameras.main.shake(100, 0.003);
   }
 
   applySplashDamage(x, y, config) {
@@ -2210,6 +2574,8 @@ ${randomTower.config.emoji} 升至Lv.${randomTower.level}
   applyLightningChain(startTarget, config) {
     let currentTarget = startTarget;
     const hitTargets = [startTarget];
+    let chainDecay = config.chainPercentDecay || 0.7; // 預設70%，或使用配置的遞減率
+
     for (let i = 1; i < config.chainCount; i++) {
       let nextTarget = null;
       let closestDistance = config.chainRange;
@@ -2223,7 +2589,18 @@ ${randomTower.config.emoji} 升至Lv.${randomTower.level}
       });
       if (nextTarget) {
         this.drawLightning(currentTarget.x, currentTarget.y, nextTarget.x, nextTarget.y);
-        nextTarget.takeDamage(config.damage * 0.7);
+
+        // 基礎傷害（連鎖遞減）
+        const chainDamage = config.damage * Math.pow(chainDecay, i);
+        nextTarget.takeDamage(chainDamage);
+
+        // 百分比真傷（連鎖遞減）
+        if (config.percentDamage) {
+          const percentDmg = nextTarget.maxHealth * config.percentDamage * Math.pow(chainDecay, i);
+          nextTarget.takeDamage(percentDmg);
+          this.showPercentDamageText(nextTarget.x, nextTarget.y, percentDmg);
+        }
+
         hitTargets.push(nextTarget);
         currentTarget = nextTarget;
       } else {
