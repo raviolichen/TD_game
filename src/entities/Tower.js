@@ -146,9 +146,15 @@ export default class Tower {
       this.config.meteorCountMax
     );
 
-    // 通知場景創建隕石
-    if (this.scene.createMeteorStrike) {
-      this.scene.createMeteorStrike(count, this.config, this, auraBonus);
+    // 通知場景創建隕石（使用 effectManager）
+    if (this.scene.effectManager) {
+      this.scene.effectManager.createMeteorStrike(
+        count,
+        this.config,
+        this,
+        auraBonus,
+        this.scene.enemies
+      );
     }
 
     // 播放發射動畫
@@ -220,8 +226,10 @@ export default class Tower {
     projectile.glow = this.scene.add.circle(this.x, this.y, 12, this.config.effectColor, 0.4);
     projectile.glow.setDepth(29); // 發光在子彈下方
 
-    // 添加到場景的子彈陣列
-    this.scene.projectiles.push(projectile);
+    // 添加到投射物管理器
+    if (this.scene.projectileManager) {
+      this.scene.projectileManager.addProjectile(projectile);
+    }
 
     // 創建粒子特效
     this.createFireParticles();

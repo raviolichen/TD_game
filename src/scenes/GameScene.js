@@ -2,6 +2,12 @@ import Tower from '../entities/Tower.js';
 import Enemy from '../entities/Enemy.js';
 import { TowerConfig, TowerTypes, canCraftTower, canCraftThreeTowers } from '../config/towerConfig.js';
 import SocketService from '../services/SocketService.js';
+import EffectManager from '../managers/EffectManager.js';
+import ProjectileManager from '../managers/ProjectileManager.js';
+import WaveManager from '../managers/WaveManager.js';
+import TowerManager from '../managers/TowerManager.js';
+import UIManager from '../managers/UIManager.js';
+import EconomyManager from '../managers/EconomyManager.js';
 
 // 遊戲配置參數
 const BOSS_WAVE_INTERVAL = 10; // 每幾波出現一次Boss
@@ -27,8 +33,6 @@ export default class GameScene extends Phaser.Scene {
     this.playerTowers = [];
     this.opponentTowers = [];
     this.enemies = [];
-    this.projectiles = [];
-    this.groundFires = []; // 地面火焰區域
     this.selectedTower = null;
     this.selectedTowerObject = null;
     this.previewTower = null;
@@ -85,15 +89,23 @@ export default class GameScene extends Phaser.Scene {
   create(data) {
     this.cameras.main.setBackgroundColor('#A8D54F');
 
+    // 初始化所有管理器
+    this.effectManager = new EffectManager(this);
+    this.projectileManager = new ProjectileManager(this, this.effectManager);
+    this.waveManager = new WaveManager(this);
+    this.towerManager = new TowerManager(this);
+    this.uiManager = new UIManager(this);
+    this.economyManager = new EconomyManager(this);
+
     if (this.gameMode === 'singlePlayer') {
       this.initializeSinglePlayerGame();
-      this.scheduleNextWave(10000);
+      this.waveManager.scheduleNextWave(10000);
     } else {
       this.initializeMultiplayerGame();
     }
 
     this.input.on('pointerdown', (pointer) => this.handleMapClick(pointer));
-    this.input.on('pointermove', (pointer) => this.handleMouseMove(pointer));
+    this.input.on('pointermove', (pointer) => this.towerManager.handleMouseMove(pointer));
 
     this.events.once('shutdown', this.onSceneShutdown, this);
     this.events.once('destroy', this.onSceneShutdown, this);
@@ -103,7 +115,7 @@ export default class GameScene extends Phaser.Scene {
     this.createLayout();
     this.createPath();
     this.createBuildableAreas();
-    this.createUI();
+    this.uiManager.createUI();
     this.playerPath = this.path;
     this.playerBuildBounds = this.mapBounds;
   }
@@ -171,16 +183,16 @@ export default class GameScene extends Phaser.Scene {
       this.createMultiplayerLayout();
       this.playerPath = this.createMultiplayerPath(this.playerAreaRect);
       this.opponentPath = this.createMultiplayerPath(this.opponentAreaRect);
-      this.createMultiplayerUI();
-      if (this.hintText) {
-        this.hintText.setText('💡 對戰開始！建造防線');
+      this.uiManager.createMultiplayerUI();
+      if (this.uiManager.hintText) {
+        this.uiManager.hintText.setText('💡 對戰開始！建造防線');
       }
 
       this.setupOpponentListeners();
-      this.showMessage('⚔️ 對戰開始！5 秒後開啟第一波', 0xFFD700);
+      this.uiManager.showMessage('⚔️ 對戰開始！5 秒後開啟第一波', 0xFFD700);
       this.startStateSyncBroadcast();
       if (this.playerNumber === 1) {
-        this.hostScheduleNextWave(5000);
+        this.waveManager.hostScheduleNextWave(5000);
       }
     });
   }
@@ -243,7 +255,7 @@ export default class GameScene extends Phaser.Scene {
 
     this.opponentTowers.push(tower);
     this.towers.push(tower);
-    this.createBuildEffect(worldX, worldY, tower.config.color);
+    this.effectManager.createBuildEffect(worldX, worldY, tower.config.color);
   }
 
   handleOpponentUpgrade(data) {
@@ -251,7 +263,7 @@ export default class GameScene extends Phaser.Scene {
     const tower = this.towerById.get(data.towerId);
     if (!tower || !tower.isRemote) return;
     tower.upgrade();
-    this.createUpgradeEffect(tower.x, tower.y, tower.config.effectColor);
+    this.effectManager.createUpgradeEffect(tower.x, tower.y, tower.config.effectColor);
   }
 
   handleOpponentRemoveTower(data) {
@@ -298,7 +310,7 @@ export default class GameScene extends Phaser.Scene {
     if (this.matchEnded || this.isGameOver) return;
     if (this.playerNumber === 1) return; // Host drives waves locally
     const waveNumber = typeof data?.wave === 'number' ? data.wave : null;
-    this.startWave({ fromNetwork: true, waveNumber });
+    this.waveManager.startWave({ fromNetwork: true, waveNumber });
   }
 
   // ===== 狀態同步機制 (解決失焦問題) =====
@@ -436,32 +448,6 @@ export default class GameScene extends Phaser.Scene {
     });
   }
 
-  spawnLocalEnemy({ isBoss = false } = {}) {
-    if (this.matchEnded) return;
-    const path = this.gameMode === 'multiplayer' ? this.playerPath : this.path;
-    if (!path || path.length === 0) return;
-    const enemy = new Enemy(this, path, this.wave, isBoss);
-    enemy.owner = 'self';
-    const enemyId = this.createEnemyNetworkId();
-    enemy.enemyId = enemyId;
-    this.enemies.push(enemy);
-    this.localEnemiesById.set(enemyId, enemy);
-
-    if (this.gameMode === 'multiplayer' && SocketService.socket && this.roomId) {
-      const payload = {
-        roomId: this.roomId,
-        enemyId,
-        wave: this.wave,
-        isBoss,
-        emoji: enemy.visualEmoji,
-        ownerId: this.localPlayerId || SocketService.socket.id
-      };
-      console.log('[敵人生成] 發送敵人生成事件:', payload);
-      SocketService.emit('enemy-spawn', payload);
-    }
-
-    return enemy;
-  }
 
   handleEnemySpawnNetwork(data) {
     console.log('[敵人生成] 收到對手敵人生成事件:', data);
@@ -610,8 +596,8 @@ export default class GameScene extends Phaser.Scene {
       });
     }
 
-    if (cause === 'dead') {
-      this.createHitEffect(ghost.x, ghost.y, 0xFFFFFF);
+    if (cause === 'dead' && this.effectManager && this.effectManager.createHitEffect) {
+      this.effectManager.createHitEffect(ghost.x, ghost.y, 0xFFFFFF);
     }
   }
 
@@ -681,7 +667,7 @@ export default class GameScene extends Phaser.Scene {
       const goldBonus = this.calculateGoldBonus(enemy);
       const finalGold = Math.round(enemy.reward * (1 + goldBonus));
       if (this.addGold) {
-        this.addGold(finalGold);
+        this.economyManager.addGold(finalGold);
       }
     }
 
@@ -1080,101 +1066,6 @@ export default class GameScene extends Phaser.Scene {
     return pathPoints;
   }
 
-  createMultiplayerUI() {
-    // 添加底部 UI 背景條
-    const uiBar = this.add.rectangle(0, 500, 1200, 100, 0xF5F5F5, 0.95)
-      .setOrigin(0, 0)
-      .setDepth(100)
-      .setStrokeStyle(3, 0x000000, 1);
-
-    // 基礎資訊顯示
-    this.waveText = this.add.text(20, 515, `🌊 波數: ${this.wave}`, {
-      fontSize: '18px',
-      color: '#3498DB',
-      fontStyle: 'bold',
-      stroke: '#000000',
-      strokeThickness: 2,
-      padding: { x: 8, y: 5 }
-    }).setDepth(101);
-
-    this.goldText = this.add.text(20, 545, `💰 ${this.gold}`, {
-      fontSize: '20px',
-      color: '#F39C12',
-      fontStyle: 'bold',
-      padding: { x: 8, y: 5 },
-      stroke: '#000000',
-      strokeThickness: 2
-    }).setDepth(101);
-
-    this.livesText = this.add.text(180, 545, `❤️ ${this.lives}`, {
-      fontSize: '20px',
-      color: '#E74C3C',
-      fontStyle: 'bold',
-      padding: { x: 8, y: 5 },
-      stroke: '#000000',
-      strokeThickness: 2
-    }).setDepth(101);
-
-    this.opponentLivesText = this.add.text(1180, 530, `對手 ❤️ ${this.opponentLives}`, {
-      fontSize: '18px',
-      color: '#D35400',
-      fontStyle: 'bold',
-      align: 'right',
-      stroke: '#000000',
-      strokeThickness: 2,
-      padding: { x: 8, y: 5 }
-    }).setOrigin(1, 0.5).setDepth(101);
-
-    // 基礎塔按鈕
-    const towerTypes = [TowerTypes.ARROW, TowerTypes.FIRE, TowerTypes.ICE, TowerTypes.MAGIC];
-    towerTypes.forEach((type, index) => {
-      const x = 320 + index * 110;
-      const y = 550;
-      this.createTowerButton(x, y, type, 60);
-    });
-
-    // 合成按鈕
-    const craftButton = this.add.rectangle(780, 550, 60, 60, 0xB565D8)
-      .setStrokeStyle(3, 0x000000)
-      .setInteractive({ useHandCursor: true });
-    craftButton.setDepth(101);
-
-    const craftIcon = this.add.text(780, 540, '🔨', {
-      fontSize: '24px',
-      color: '#FFFFFF',
-      fontStyle: 'bold'
-    }).setOrigin(0.5).setDepth(102);
-
-    const craftLabel = this.add.text(780, 565, '合成', {
-      fontSize: '10px',
-      color: '#FFFFFF',
-      fontStyle: 'bold'
-    }).setOrigin(0.5).setDepth(102);
-
-    craftButton.on('pointerdown', () => this.toggleCraftMode());
-    craftButton.on('pointerover', () => {
-      craftButton.setFillStyle(0xC67EE8);
-      craftButton.setScale(1.05);
-      craftIcon.setScale(1.05);
-      craftLabel.setScale(1.05);
-    });
-    craftButton.on('pointerout', () => {
-      craftButton.setFillStyle(0xB565D8);
-      craftButton.setScale(1);
-      craftIcon.setScale(1);
-      craftLabel.setScale(1);
-    });
-
-    this.hintText = this.add.text(950, 540, '💡 選擇基礎塔建造\n或點擊🔨進入合成模式', {
-      fontSize: '14px',
-      color: '#333333',
-      padding: { x: 12, y: 8 },
-      stroke: '#FFFFFF',
-      strokeThickness: 3,
-      align: 'center',
-      lineSpacing: 4
-    }).setOrigin(0.5).setDepth(101);
-  }
 
   createLayout() {
     const mapBg = this.add.rectangle(220, 0, 980, 600, 0xBCE95A, 1);
@@ -1259,147 +1150,50 @@ export default class GameScene extends Phaser.Scene {
     };
   }
 
-  createUI() {
-    const panelX = 110;
-    const panelWidth = 190;
-
-    const resourceY = 60;
-    const resourceTitle = this.add.text(panelX, resourceY, '📊 遊戲資源', {
-      fontSize: '16px',
-      color: '#333333',
-      fontStyle: 'bold',
-      padding: { x: 4, y: 4 }
-    }).setOrigin(0.5);
-    resourceTitle.setDepth(101);
-
-    const resourceBg = this.add.rectangle(panelX, resourceY + 70, panelWidth, 110, 0xFFFFFF, 1);
-    resourceBg.setStrokeStyle(2, 0xCCCCCC);
-    resourceBg.setDepth(100);
-
-    const textStartX = 25;
-    this.goldText = this.add.text(textStartX, resourceY + 25, `💰 金幣: ${this.gold}`, {
-      fontSize: '15px',
-      color: '#F39C12',
-      fontStyle: 'bold',
-      padding: { x: 2, y: 2 }
-    });
-    this.goldText.setDepth(102);
-
-    this.livesText = this.add.text(textStartX, resourceY + 50, `❤️ 生命: ${this.lives}`, {
-      fontSize: '15px',
-      color: '#E74C3C',
-      fontStyle: 'bold',
-      padding: { x: 2, y: 2 }
-    });
-    this.livesText.setDepth(102);
-
-    this.waveText = this.add.text(textStartX, resourceY + 75, `🌊 波數: ${this.wave}`, {
-      fontSize: '15px',
-      color: '#3498DB',
-      fontStyle: 'bold',
-      padding: { x: 2, y: 2 }
-    });
-    this.waveText.setDepth(102);
-
-    this.scoreText = this.add.text(textStartX, resourceY + 100, `⭐ 分數: ${this.score}`, {
-      fontSize: '15px',
-      color: '#9B59B6',
-      fontStyle: 'bold',
-      padding: { x: 2, y: 2 }
-    });
-    this.scoreText.setDepth(102);
-
-    const towerY = 210;
-    const towerTitle = this.add.text(panelX, towerY, '🏰 基礎塔', {
-      fontSize: '16px',
-      color: '#333333',
-      fontStyle: 'bold',
-      padding: { x: 4, y: 4 }
-    }).setOrigin(0.5);
-    towerTitle.setDepth(101);
-
-    const buttonSize = 70;
-    const buttonGap = 20;
-    const rowSpacing = buttonSize + buttonGap;
-    const columnOffset = (buttonSize + buttonGap) / 2;
-    const buttonStartY = towerY + 70;
-    const towerTypes = [
-      TowerTypes.ARROW,
-      TowerTypes.FIRE,
-      TowerTypes.ICE,
-      TowerTypes.MAGIC
-    ];
-
-    towerTypes.forEach((type, index) => {
-      const col = index % 2;
-      const row = Math.floor(index / 2);
-      const x = panelX + (col === 0 ? -columnOffset : columnOffset);
-      const y = buttonStartY + row * rowSpacing;
-      this.createTowerButton(x, y, type, buttonSize);
-    });
-
-    const cancelY = towerY + 230;
-    const cancelButton = this.add.rectangle(panelX, cancelY, panelWidth - 10, 40, 0xFF6B6B)
-      .setStrokeStyle(3, 0x000000)
-      .setInteractive();
-    cancelButton.setDepth(101);
-
-    this.add.text(panelX, cancelY, '❌ 取消選擇', {
-      fontSize: '14px',
-      color: '#FFFFFF',
-      fontStyle: 'bold'
-    }).setOrigin(0.5).setDepth(102);
-
-    cancelButton.on('pointerdown', () => this.cancelTowerSelection());
-    cancelButton.on('pointerover', () => {
-      cancelButton.setFillStyle(0xFF8E8E);
-      cancelButton.setScale(1.05);
-    });
-    cancelButton.on('pointerout', () => {
-      cancelButton.setFillStyle(0xFF6B6B);
-      cancelButton.setScale(1);
-    });
-
-    const craftY = towerY + 280;
-    const craftButton = this.add.rectangle(panelX, craftY, panelWidth - 10, 50, 0xB565D8)
-      .setStrokeStyle(3, 0x000000)
-      .setInteractive();
-    craftButton.setDepth(101);
-
-    this.add.text(panelX, craftY, '🔨 合成塔', {
-      fontSize: '16px',
-      color: '#FFFFFF',
-      fontStyle: 'bold'
-    }).setOrigin(0.5).setDepth(102);
-
-    craftButton.on('pointerdown', () => this.toggleCraftMode());
-    craftButton.on('pointerover', () => {
-      craftButton.setFillStyle(0xC67EE8);
-      craftButton.setScale(1.05);
-    });
-    craftButton.on('pointerout', () => {
-      craftButton.setFillStyle(0xB565D8);
-      craftButton.setScale(1);
-    });
-
-    const hintY = 555;
-    const hintBg = this.add.rectangle(panelX, hintY, panelWidth, 60, 0xE8F5E9, 1);
-    hintBg.setStrokeStyle(2, 0x4CAF50);
-    hintBg.setDepth(100);
-
-    this.hintText = this.add.text(panelX, hintY, '💡 選擇塔建造', {
-      fontSize: '13px',
-      color: '#333333',
-      fontStyle: 'bold',
-      align: 'center',
-      wordWrap: { width: 170 },
-      padding: { x: 2, y: 2 }
-    }).setOrigin(0.5);
-    this.hintText.setDepth(102);
-  }
   // #endregion
 
   // #region Core Game Logic & Interaction
+  update(time, delta) {
+    if (this.isGameOver || this.matchEnded) return;
+
+    const auraBonus = this.waveManager ? this.waveManager.getAuraBonus() : null;
+
+    // 更新所有玩家塔
+    if (this.playerTowers && this.playerTowers.length > 0) {
+      this.playerTowers.forEach(tower => {
+        if (tower && tower.update) {
+          tower.update(time, this.enemies, auraBonus);
+        }
+      });
+    }
+
+    // 更新敵人位置與狀態
+    if (this.enemies && this.enemies.length > 0) {
+      this.enemies = this.enemies.filter(enemy => {
+        if (!enemy) return false;
+        if (enemy.update) {
+          enemy.update(delta, auraBonus);
+        }
+        return enemy.active;
+      });
+    }
+
+    // 更新範圍持續效果（例如地面火焰）
+    if (this.effectManager && this.effectManager.updateGroundFires) {
+      this.effectManager.updateGroundFires(delta, this.enemies);
+    }
+
+    // 更新投射物
+    if (this.projectileManager && this.projectileManager.update) {
+      this.projectileManager.update(delta, this.enemies);
+    }
+
+    // 多人模式同步幽靈敵人
+    if (this.gameMode === 'multiplayer') {
+      this.updateGhostEnemies(delta);
+    }
+  }
+
   handleMapClick(pointer) {
     if (this.gameMode === 'singlePlayer' && pointer.x < 220) return;
 
@@ -1409,1314 +1203,52 @@ export default class GameScene extends Phaser.Scene {
     const clickedTower = this.playerTowers.find(tower => Phaser.Math.Distance.Between(pointer.x, pointer.y, tower.x, tower.y) < 25);
 
     if (clickedTower) {
-      if (this.craftMode) {
-        this.selectTowerForCraft(clickedTower);
+      if (this.towerManager.craftMode) {
+        this.towerManager.selectTowerForCraft(clickedTower);
       } else {
-        this.showTowerInfo(clickedTower);
+        this.towerManager.showTowerInfo(clickedTower);
       }
       return;
     }
 
-    if (this.upgradePanel) {
-      this.hideUpgradePanel();
-      if (this.selectedTowerObject) {
-        if (this.selectedTowerObject.sprite && this.selectedTowerObject.sprite.active) {
-          this.selectedTowerObject.hideRange();
+    if (this.towerManager.upgradePanel) {
+      this.towerManager.hideUpgradePanel();
+      if (this.towerManager.selectedTowerObject) {
+        if (this.towerManager.selectedTowerObject.sprite && this.towerManager.selectedTowerObject.sprite.active) {
+          this.towerManager.selectedTowerObject.hideRange();
         }
-        this.selectedTowerObject = null;
+        this.towerManager.selectedTowerObject = null;
       }
     }
 
     // 只有當玩家選擇了塔要建造時，才檢查區域限制
-    if (this.selectedTower && !this.craftMode) {
+    if (this.towerManager.selectedTower && !this.towerManager.craftMode) {
       if (this.gameMode === 'multiplayer') {
         if (!this.playerMapBounds || !Phaser.Geom.Rectangle.Contains(this.playerMapBounds, pointer.x, pointer.y)) {
-          this.showMessage('只能在自己的區域建造！', 0xFF0000);
+          this.uiManager.showMessage('只能在自己的區域建造！', 0xFF0000);
           return;
         }
       }
-      this.buildTower(pointer.x, pointer.y, this.selectedTower);
+      this.towerManager.buildTower(pointer.x, pointer.y, this.towerManager.selectedTower);
     }
   }
 
-  buildTower(x, y, towerType) {
-    if (this.gameMode === 'multiplayer') {
-      if (this.matchEnded) {
-        this.showMessage('⚔️ 對戰已結束，無法建造。', 0xFFA500);
-        return;
-      }
-      if (!this.matchStarted) {
-        this.showMessage('⌛ 正在等待對手加入，稍後再試！', 0xFFA500);
-        return;
-      }
-    }
 
-    const config = TowerConfig[towerType];
-    if (this.gold < config.cost) {
-      this.showMessage('💸 金幣不足！', 0xFF0000);
-      return;
-    }
+  // 波次管理方法已移至 WaveManager
+  // 投射物、特效等方法已移至 ProjectileManager 和 EffectManager
 
-    const placement = this.getPlacementStatus(x, y);
-    if (!placement.valid) {
-      this.showMessage(placement.reason, 0xFF0000);
-      return;
-    }
-
-    const tower = new Tower(this, x, y, towerType);
-    this.playerTowers.push(tower);
-    this.towers.push(tower);
-
-    let towerId = null;
-    if (this.gameMode === 'multiplayer') {
-      towerId = this.createTowerNetworkId();
-      tower.networkId = towerId;
-      this.towerById.set(towerId, tower);
-    }
-
-    this.gold -= config.cost;
-    this.updateUI();
-
-    this.selectedTower = null;
-    if(this.hintText) this.hintText.setText(`✅ 建造成功
-${config.emoji}
-${config.name}`);
-    
-    if (this.previewTower) {
-      Object.values(this.previewTower).forEach(p => p.destroy());
-      this.previewTower = null;
-    }
-    this.createBuildEffect(x, y, config.color);
-
-    if (this.gameMode === 'multiplayer') {
-      const localX = x - this.playerMapBounds.x;
-      const ownerId = this.localPlayerId || (SocketService.socket ? SocketService.socket.id : null);
-      if (!this.localPlayerId && ownerId) this.localPlayerId = ownerId;
-      if (SocketService.socket && this.roomId && towerId) {
-        SocketService.emit('build-tower', {
-          roomId: this.roomId,
-          towerId,
-          towerType,
-          x: localX,
-          y,
-          ownerId
-        });
-      }
-    }
-  }
-
-  getPlacementStatus(x, y) {
-    const isSinglePlayer = this.gameMode === 'singlePlayer';
-    const bounds = isSinglePlayer ? this.mapBounds : this.playerBuildBounds;
-    const pathPoints = isSinglePlayer ? this.path : this.playerPath;
-    const towers = isSinglePlayer ? this.towers : this.playerTowers;
-
-    if (!bounds) {
-      return { valid: true };
-    }
-
-    const margin = 12;
-    if (x < bounds.left + margin || x > bounds.right - margin || y < bounds.top + margin || y > bounds.bottom - margin) {
-      return { valid: false, reason: '🚧 超出可建造範圍！' };
-    }
-
-    if (pathPoints && this.isPointOnPath(x, y, pathPoints)) {
-      return { valid: false, reason: '🚫 不能在路徑上建造！' };
-    }
-
-    const minDistance = 55;
-    if (towers && towers.some(tower => Phaser.Math.Distance.Between(x, y, tower.x, tower.y) < minDistance)) {
-      return { valid: false, reason: '⚠️ 塔太靠近了！' };
-    }
-
-    return { valid: true };
-  }
-
-  isPointOnPath(x, y, pathPoints, collisionRadius = null) {
-    if (!pathPoints || pathPoints.length < 2) return false;
-    const threshold = Math.max(30, (collisionRadius ?? this.pathCollisionRadius ?? 45) - 5);
-    for (let i = 0; i < pathPoints.length - 1; i++) {
-      const p1 = pathPoints[i];
-      const p2 = pathPoints[i + 1];
-      const distance = this.distanceToLineSegment(x, y, p1.x, p1.y, p2.x, p2.y);
-      if (distance < threshold) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  distanceToLineSegment(x, y, x1, y1, x2, y2) {
-    const A = x - x1;
-    const B = y - y1;
-    const C = x2 - x1;
-    const D = y2 - y1;
-
-    const dot = A * C + B * D;
-    const lenSq = C * C + D * D;
-    let param = -1;
-    if (lenSq !== 0) {
-      param = dot / lenSq;
-    }
-
-    let xx;
-    let yy;
-
-    if (param < 0) {
-      xx = x1;
-      yy = y1;
-    } else if (param > 1) {
-      xx = x2;
-      yy = y2;
-    } else {
-      xx = x1 + param * C;
-      yy = y1 + param * D;
-    }
-
-    const dx = x - xx;
-    const dy = y - yy;
-    return Math.sqrt(dx * dx + dy * dy);
-  }
-
-  handleMouseMove(pointer) {
-    if (this.gameMode === 'singlePlayer' && pointer.x < 220) {
-        if (this.previewTower) {
-            Object.values(this.previewTower).forEach(p => p.setVisible(false));
-        }
-        return;
-    }
-    if (!this.selectedTower || this.craftMode) {
-        if (this.previewTower) {
-            Object.values(this.previewTower).forEach(p => p.destroy());
-            this.previewTower = null;
-        }
-        return;
-    }
-
-    let targetBounds = this.playerMapBounds;
-    if (this.gameMode === 'multiplayer') {
-        if (!targetBounds || !Phaser.Geom.Rectangle.Contains(targetBounds, pointer.x, pointer.y)) {
-             if (this.previewTower) {
-                Object.values(this.previewTower).forEach(p => p.setVisible(false));
-            }
-            return;
-        }
-    }
-
-    if (this.previewTower && this.previewTower.circle && !this.previewTower.circle.visible) {
-        Object.values(this.previewTower).forEach(p => p.setVisible(true));
-    }
-
-    const config = TowerConfig[this.selectedTower];
-    const status = this.getPlacementStatus(pointer.x, pointer.y);
-    const valid = status.valid;
-
-    if (!this.previewTower) {
-      this.previewTower = {
-        circle: this.add.circle(pointer.x, pointer.y, 20, config.color, 0.5),
-        range: this.add.circle(pointer.x, pointer.y, config.range, config.effectColor, 0.1).setStrokeStyle(2, config.effectColor, 0.3),
-        dot: this.add.circle(pointer.x, pointer.y, 6, 0xFFFFFF, 1)
-      };
-      this.previewTower.range.setDepth(98);
-      this.previewTower.circle.setDepth(99);
-      this.previewTower.dot.setDepth(100);
-      this.previewTower.dot.setStrokeStyle(2, 0x2ECC71, 0.6);
-    } else {
-      this.previewTower.circle.setPosition(pointer.x, pointer.y);
-      this.previewTower.range.setPosition(pointer.x, pointer.y);
-      this.previewTower.dot.setPosition(pointer.x, pointer.y);
-    }
-
-    this.previewTower.circle.setFillStyle(valid ? config.color : 0xE74C3C, valid ? 0.35 : 0.4);
-    this.previewTower.range.setStrokeStyle(2, valid ? config.effectColor : 0xE74C3C, valid ? 0.35 : 0.7);
-    this.previewTower.dot.setFillStyle(valid ? 0xFFFFFF : 0xFFCDD2, 1);
-    this.previewTower.dot.setStrokeStyle(2, valid ? 0x2ECC71 : 0xC0392B, valid ? 0.7 : 0.9);
-  }
-
-  update(time, delta) {
-    if (this.isGameOver) return;
-    const auraBonus = this.getAuraBonus();
-
-    // 在多人模式下，分別更新己方塔和對手塔
-    if (this.gameMode === 'multiplayer') {
-      // 己方塔攻擊己方敵人
-      this.playerTowers.forEach(tower => tower.update(time, this.enemies, auraBonus));
-
-      // 對手塔不參與實際攻擊邏輯（視覺由對手端處理）
-      // this.opponentTowers.forEach(tower => {
-      //   // 可以在這裡添加對手塔的視覺效果同步
-      // });
-    } else {
-      // 單人模式：所有塔攻擊所有敵人
-      this.towers.forEach(tower => tower.update(time, this.enemies, auraBonus));
-    }
-
-    // 保存filter前的陣列長度，用於檢測在filter過程中是否有新敵人被加入
-    const beforeFilterCount = this.enemies.length;
-    const originalEnemies = this.enemies; // 保存原始引用
-
-    this.enemies = this.enemies.filter(enemy => {
-      if (enemy.active) {
-        enemy.update(delta, auraBonus);
-        return true;
-      }
-      return false;
-    });
-
-    // 修復：如果在filter過程中有新敵人被加入（例如Boss召喚小怪），
-    // 這些新敵人不會被filter處理，需要手動加回結果陣列
-    if (originalEnemies.length > beforeFilterCount) {
-      const newEnemies = originalEnemies.slice(beforeFilterCount);
-      newEnemies.forEach(enemy => {
-        if (enemy.active) {
-          this.enemies.push(enemy);
-        }
-      });
-    }
-    this.updateProjectiles(delta);
-    this.updateGroundFires(delta);
-    if (this.gameMode === 'multiplayer') {
-      this.updateGhostEnemies(delta);
-    }
-  }
-  
-  updateUI() {
-    if (this.gameMode === 'singlePlayer') {
-        if (this.goldText) this.goldText.setText(`💰 金幣: ${this.gold}`);
-        if (this.livesText) this.livesText.setText(`❤️ 生命: ${this.lives}`);
-        if (this.waveText) this.waveText.setText(`🌊 波數: ${this.wave}`);
-        if (this.scoreText) this.scoreText.setText(`⭐ 分數: ${this.score}`);
-    } else {
-        if (this.goldText) this.goldText.setText(`💰 ${this.gold}`);
-        if (this.livesText) this.livesText.setText(`❤️ ${this.lives}`);
-        if (this.waveText) this.waveText.setText(`🌊 波數: ${this.wave}`);
-        if (this.opponentLivesText) this.opponentLivesText.setText(`對手 ❤️ ${this.opponentLives}`);
-    }
-  }
-  // #endregion
-
-  // #region Tower Interaction (Single Player)
-  selectTowerForCraft(tower) {
-    if (!this.craftTower1) {
-      this.craftTower1 = tower;
-      tower.showRange();
-      this.hintText.setText(`🔨 已選第一座
-${tower.config.emoji}
-選第二座`);
-    } else if (!this.craftTower2) {
-      if (tower === this.craftTower1) {
-        this.showMessage('❌ 不能選擇同一座塔！', 0xFF0000);
-        this.hintText.setText(`⚠️ 請選擇
-不同的塔
-進行合成`);
-        return;
-      }
-      this.craftTower2 = tower;
-      tower.showRange();
-      const twoTowerResult = canCraftTower(this.craftTower1.type, this.craftTower2.type);
-      if (twoTowerResult) {
-        this.attemptCraft();
-      } else {
-        this.hintText.setText(`🔨 已選兩座
-${this.craftTower1.config.emoji}${this.craftTower2.config.emoji}
-選第三座或重選`);
-      }
-    } else if (!this.craftTower3) {
-      if (tower === this.craftTower1 || tower === this.craftTower2) {
-        this.showMessage('❌ 不能選擇同一座塔！', 0xFF0000);
-        return;
-      }
-      this.craftTower3 = tower;
-      tower.showRange();
-      this.attemptCraft();
-    } else {
-      this.clearCraftSelection();
-      this.craftTower1 = tower;
-      tower.showRange();
-      this.hintText.setText(`🔨 已選第一座
-${tower.config.emoji}
-選第二座`);
-    }
-  }
-
-  attemptCraft() {
-    let newTowerType = null;
-    let towersToRemove = [];
-    let newX, newY;
-
-    if (this.craftTower3) {
-      newTowerType = canCraftThreeTowers(this.craftTower1.type, this.craftTower2.type, this.craftTower3.type);
-      if (!newTowerType) {
-        this.showMessage('❌ 這三座塔無法合成！', 0xFF0000);
-        this.clearCraftSelection();
-        return;
-      }
-      towersToRemove = [this.craftTower1, this.craftTower2, this.craftTower3];
-      newX = this.craftTower2.x;
-      newY = this.craftTower2.y;
-    } else {
-      newTowerType = canCraftTower(this.craftTower1.type, this.craftTower2.type);
-      if (!newTowerType) {
-        this.showMessage('❌ 這兩座塔無法合成！', 0xFF0000);
-        this.clearCraftSelection();
-        return;
-      }
-      towersToRemove = [this.craftTower1, this.craftTower2];
-      newX = this.craftTower2.x;
-      newY = this.craftTower2.y;
-    }
-
-    const newConfig = TowerConfig[newTowerType];
-    let inheritLevel = Infinity;
-    const towerIdsToRemove = [];
-    towersToRemove.forEach(t => {
-      if (t.sprite && t.sprite.active) t.hideRange();
-      inheritLevel = Math.min(inheritLevel, t.level);
-      if (t.networkId) {
-        towerIdsToRemove.push(t.networkId);
-      }
-    });
-
-    // 在多人模式中，通知對手移除舊塔
-    if (this.gameMode === 'multiplayer' && SocketService.socket && this.roomId) {
-      towerIdsToRemove.forEach(towerId => {
-        SocketService.emit('remove-tower', { roomId: this.roomId, towerId });
-      });
-    }
-
-    this.playerTowers = this.playerTowers.filter(t => !towersToRemove.includes(t));
-    this.towers = this.towers.filter(t => !towersToRemove.includes(t));
-    towersToRemove.forEach(t => {
-      if (t.networkId) this.towerById.delete(t.networkId);
-      t.destroy();
-    });
-
-    const newTower = new Tower(this, newX, newY, newTowerType);
-    this.playerTowers.push(newTower);
-    this.towers.push(newTower);
-
-    if (inheritLevel > 1) {
-      for (let i = 1; i < inheritLevel; i++) newTower.upgrade();
-    }
-
-    // 在多人模式中，給新塔分配 ID 並通知對手
-    if (this.gameMode === 'multiplayer' && SocketService.socket && this.roomId) {
-      const towerId = this.createTowerNetworkId();
-      newTower.networkId = towerId;
-      this.towerById.set(towerId, newTower);
-
-      const relativeX = newX - (this.playerAreaRect ? this.playerAreaRect.x : 0);
-      SocketService.emit('build-tower', {
-        roomId: this.roomId,
-        x: relativeX,
-        y: newY,
-        towerType: newTowerType,
-        towerId: towerId,
-        level: inheritLevel
-      });
-    }
-
-    this.createCraftEffect(newX, newY, newConfig.color);
-    this.showMessage(`🎉 成功合成 ${newConfig.emoji} ${newConfig.name}！Lv.${inheritLevel}`, 0xFFD700);
-    this.clearCraftSelection();
-    this.craftMode = false;
-    if (this.hintText) {
-      const hintTextContent = this.gameMode === 'multiplayer'
-        ? '💡 選擇基礎塔建造\n或點擊🔨進入合成模式'
-        : `🎉 合成成功
-${newConfig.emoji}
-${newConfig.name}`;
-      this.hintText.setText(hintTextContent);
-    }
-  }
-
-  clearCraftSelection() {
-    if (this.craftTower1 && this.craftTower1.sprite && this.craftTower1.sprite.active) this.craftTower1.hideRange();
-    if (this.craftTower2 && this.craftTower2.sprite && this.craftTower2.sprite.active) this.craftTower2.hideRange();
-    if (this.craftTower3 && this.craftTower3.sprite && this.craftTower3.sprite.active) this.craftTower3.hideRange();
-    this.craftTower1 = null;
-    this.craftTower2 = null;
-    this.craftTower3 = null;
-  }
-
-  showTowerInfo(tower) {
-    if (!tower || !tower.sprite || !tower.sprite.active) return;
-    this.hideUpgradePanel();
-    if (this.selectedTowerObject && this.selectedTowerObject !== tower) {
-      if (this.selectedTowerObject.sprite && this.selectedTowerObject.sprite.active) {
-        this.selectedTowerObject.hideRange();
-      }
-    }
-    this.selectedTowerObject = tower;
-    tower.showRange();
-    const info = tower.getInfo();
-    this.hintText.setText(`📊 ${tower.config.emoji}
-${info.name}
-💥${info.damage} 📏${info.range}`);
-    this.showUpgradePanel(tower);
-  }
-
-  showUpgradePanel(tower) {
-    if (this.upgradePanel) this.hideUpgradePanel();
-
-    const info = tower.getInfo();
-    const upgradeCost = Math.floor(tower.config.cost * 0.6);
-    const maxAllowedLevel = Math.floor(this.wave / 5);
-    const isLevelCapped = tower.level >= maxAllowedLevel;
-    const nextUnlockWave = (tower.level + 1) * 5;
-
-    const panelX = tower.x;
-    const panelY = tower.y - 80;
-    const panelWidth = 160;
-    const panelHeight = 130;
-    const BASE_DEPTH = 200;
-
-    this.upgradePanel = {};
-    this.upgradePanel.bg = this.add.rectangle(panelX, panelY, panelWidth, panelHeight, 0x2C3E50, 0.95).setStrokeStyle(3, 0xFFD700).setDepth(BASE_DEPTH).setInteractive();
-    this.upgradePanel.bg.on('pointerdown', (p) => p.event.stopPropagation());
-    this.upgradePanel.title = this.add.text(panelX, panelY - 50, `${info.name}`, { fontSize: '14px', color: '#FFFFFF', fontStyle: 'bold' }).setOrigin(0.5).setDepth(BASE_DEPTH + 1);
-    const levelText = isLevelCapped ? `等級: ${info.level} (上限)` : `等級: ${info.level}/${maxAllowedLevel}`;
-    this.upgradePanel.level = this.add.text(panelX, panelY - 33, levelText, { fontSize: '12px', color: isLevelCapped ? '#FF6B6B' : '#FFD700' }).setOrigin(0.5).setDepth(BASE_DEPTH + 1);
-    if (isLevelCapped) {
-      this.upgradePanel.levelHint = this.add.text(panelX, panelY - 18, `⏳ 第${nextUnlockWave}波解鎖`, { fontSize: '10px', color: '#FFA500' }).setOrigin(0.5).setDepth(BASE_DEPTH + 1);
-    }
-    const statsText = `💥 ${Math.floor(info.damage)} | 📏 ${Math.floor(info.range)}`;
-    this.upgradePanel.stats = this.add.text(panelX, panelY - 3, statsText, { fontSize: '11px', color: '#FFFFFF' }).setOrigin(0.5).setDepth(BASE_DEPTH + 1);
-
-    const buttonY = panelY + 25;
-    const buttonColor = isLevelCapped ? 0x7F8C8D : 0x27AE60;
-    this.upgradePanel.upgradeButton = this.add.rectangle(panelX, buttonY, 130, 35, buttonColor).setStrokeStyle(2, 0x000000).setInteractive({ useHandCursor: true }).setDepth(BASE_DEPTH + 2);
-    const buttonText = isLevelCapped ? `🔒 已達上限` : `⬆️ 升級 ($${upgradeCost})`;
-    this.upgradePanel.upgradeText = this.add.text(panelX, buttonY, buttonText, { fontSize: '13px', color: '#FFFFFF', fontStyle: 'bold' }).setOrigin(0.5).setDepth(BASE_DEPTH + 3);
-
-    if (!isLevelCapped) {
-      this.upgradePanel.upgradeButton.on('pointerdown', (p) => { p.event.stopPropagation(); this.upgradeTower(tower, upgradeCost); });
-      this.upgradePanel.upgradeButton.on('pointerover', () => { if(this.upgradePanel) { this.upgradePanel.upgradeButton.setFillStyle(0x2ECC71).setScale(1.05); } });
-      this.upgradePanel.upgradeButton.on('pointerout', () => { if(this.upgradePanel) { this.upgradePanel.upgradeButton.setFillStyle(0x27AE60).setScale(1); } });
-    } else {
-      this.upgradePanel.upgradeButton.on('pointerdown', (p) => { p.event.stopPropagation(); this.showMessage(`⏳ 需要第${nextUnlockWave}波才能升級！`, 0xFFA500); });
-    }
-
-    const closeY = panelY + 55;
-    this.upgradePanel.closeButton = this.add.rectangle(panelX, closeY, 60, 25, 0xE74C3C).setStrokeStyle(2, 0x000000).setInteractive({ useHandCursor: true }).setDepth(BASE_DEPTH + 4);
-    this.upgradePanel.closeText = this.add.text(panelX, closeY, '❌ 關閉', { fontSize: '11px', color: '#FFFFFF', fontStyle: 'bold' }).setOrigin(0.5).setDepth(BASE_DEPTH + 5).setInteractive({ useHandCursor: true });
-    
-    const closeAction = (p) => {
-        p.event.stopPropagation();
-        const selected = this.selectedTowerObject;
-        this.hideUpgradePanel();
-        if (selected && selected.sprite && selected.sprite.active) {
-            selected.hideRange();
-        }
-        this.selectedTowerObject = null;
-    };
-    this.upgradePanel.closeButton.on('pointerdown', closeAction);
-    this.upgradePanel.closeText.on('pointerdown', closeAction);
-    this.upgradePanel.closeButton.on('pointerover', () => { if(this.upgradePanel) this.upgradePanel.closeButton.setFillStyle(0xC0392B); });
-    this.upgradePanel.closeButton.on('pointerout', () => { if(this.upgradePanel) this.upgradePanel.closeButton.setFillStyle(0xE74C3C); });
-  }
-
-  hideUpgradePanel() {
-    if (this.upgradePanel) {
-      Object.values(this.upgradePanel).forEach(obj => {
-        if (obj && obj.destroy) {
-          if (obj.removeAllListeners) obj.removeAllListeners();
-          obj.destroy();
-        }
-      });
-      this.upgradePanel = null;
-    }
-  }
-
-  upgradeTower(tower, cost) {
-    const maxAllowedLevel = Math.floor(this.wave / 5);
-    if (tower.level >= maxAllowedLevel) {
-      const nextUnlockWave = (tower.level + 1) * 5;
-      this.showMessage(`⏳ 需要第${nextUnlockWave}波才能升到${tower.level + 1}級！`, 0xFFA500);
-      return;
-    }
-    if (this.gold < cost) {
-      this.showMessage('💸 金幣不足，無法升級！', 0xFF0000);
-      return;
-    }
-    this.gold -= cost;
-    this.updateUI();
-    tower.upgrade();
-    if (this.gameMode === 'multiplayer' && tower.networkId && SocketService.socket && this.roomId) {
-      SocketService.emit('upgrade-tower', { roomId: this.roomId, towerId: tower.networkId });
-    }
-    this.showMessage(`✨ ${tower.config.emoji} 升級成功！`, 0xFFD700);
-    this.hideUpgradePanel();
-    this.showUpgradePanel(tower);
-    this.createUpgradeEffect(tower.x, tower.y, tower.config.effectColor);
-  }
-  // #endregion
-
-  // #region All Other Helper Functions
-  createTowerButton(x, y, towerType, size = 70) {
-    const config = TowerConfig[towerType];
-    const button = this.add.rectangle(x, y, size, size, config.color).setStrokeStyle(3, 0x000000).setInteractive();
-    button.setDepth(101);
-
-    const emojiSize = this.gameMode === 'singlePlayer' ? '26px' : `${size/2.5}px`;
-    // 多人模式: 降低 icon 位置 (從 size/3 改為 size/6，讓 y 值更大 = 更靠下)
-    const emojiY = this.gameMode === 'singlePlayer' ? y - 10 : y - (size/6);
-    const emoji = this.add.text(x, emojiY, config.emoji, { fontSize: emojiSize }).setOrigin(0.5);
-    emoji.setDepth(102);
-
-    const costY = this.gameMode === 'singlePlayer' ? y + 20 : y + (size/3.5);
-    const costSize = this.gameMode === 'singlePlayer' ? '13px' : `${size/5}px`;
-    const costText = this.add.text(x, costY, `$${config.cost}`, { fontSize: costSize, color: '#FFD700', fontStyle: 'bold', stroke: '#000000', strokeThickness: 2 }).setOrigin(0.5);
-    costText.setDepth(102);
-    
-    button.on('pointerdown', () => this.selectTower(towerType));
-    button.on('pointerover', () => {
-      button.setStrokeStyle(4, 0xFFFF00);
-      button.setScale(1.1);
-      if (this.gameMode === 'singlePlayer') this.showTowerTooltip(config, x + 80, y);
-    });
-    button.on('pointerout', () => {
-      button.setStrokeStyle(3, 0x000000);
-      button.setScale(1);
-      if (this.gameMode === 'singlePlayer') this.hideTooltip();
-    });
-  }
-
-  showTowerTooltip(config, x, y) {
-    if (this.tooltip) this.tooltip.destroy();
-    const text = `${config.name}
-💰${config.cost} 💥${config.damage}
-📏${config.range}
-${config.description}`;
-    this.tooltip = this.add.text(x, y, text, { fontSize: '12px', color: '#FFFFFF', backgroundColor: '#1a1a1a', padding: { x: 8, y: 6 }, fontStyle: 'bold', align: 'left' }).setOrigin(0, 0.5).setDepth(300);
-  }
-
-  hideTooltip() {
-    if (this.tooltip) {
-      this.tooltip.destroy();
-      this.tooltip = null;
-    }
-  }
-
-  selectTower(towerType) {
-    this.selectedTower = towerType;
-    const config = TowerConfig[towerType];
-    if (this.gold < config.cost) {
-      this.showMessage('💸 金幣不足！', 0xFF0000);
-      return;
-    }
-    if (this.hintText) {
-        if (this.gameMode === 'singlePlayer') {
-            this.hintText.setText(`✅ 已選擇
-${config.emoji} ${config.name}
-點擊地圖建造`);
-        } else {
-            this.hintText.setText(`✅ 已選擇: ${config.emoji}`);
-        }
-    }
-  }
-
-  cancelTowerSelection() {
-    this.selectedTower = null;
-    if (this.hintText) this.hintText.setText('💡 選擇塔建造');
-    this.hideUpgradePanel();
-    if (this.selectedTowerObject) {
-      if (this.selectedTowerObject.sprite && this.selectedTowerObject.sprite.active) {
-        this.selectedTowerObject.hideRange();
-      }
-      this.selectedTowerObject = null;
-    }
-    if (this.craftMode) {
-      this.craftMode = false;
-      this.clearCraftSelection();
-    }
-  }
-
-  toggleCraftMode() {
-    this.craftMode = !this.craftMode;
-    this.clearCraftSelection();
-    if (this.craftMode) {
-      const hintTextContent = this.gameMode === 'multiplayer'
-        ? '🔨 合成模式\n點擊已建造的2-3座塔進行合成'
-        : `🔨 合成模式
-點擊2-3座塔
-進行合成`;
-      this.hintText.setText(hintTextContent);
-      this.showMessage('🔨 合成模式：選擇2-3座塔合成', 0xB565D8);
-    } else {
-      const hintTextContent = this.gameMode === 'multiplayer'
-        ? '💡 選擇基礎塔建造\n或點擊🔨進入合成模式'
-        : `💡 退出
-合成模式`;
-      this.hintText.setText(hintTextContent);
-      this.showMessage('退出合成模式', 0x888888);
-    }
-  }
-
-  scheduleNextWave(delay = 10000) {
-    if (this.waveTimerEvent) {
-      this.waveTimerEvent.remove(false);
-      this.waveTimerEvent = null;
-    }
-    if (this.isGameOver || this.matchEnded) return;
-    this.waveTimerEvent = this.time.delayedCall(delay, () => {
-      this.waveTimerEvent = null;
-      this.startWave();
-    });
-  }
-
-  hostScheduleNextWave(delay = 10000) {
-    if (this.playerNumber !== 1) return;
-    if (this.waveTimerEvent) {
-      this.waveTimerEvent.remove(false);
-      this.waveTimerEvent = null;
-    }
-    if (this.isGameOver || this.matchEnded) return;
-    this.waveTimerEvent = this.time.delayedCall(delay, () => {
-      this.waveTimerEvent = null;
-      this.startWave({ fromNetwork: false });
-    });
-  }
-
-  startWave({ fromNetwork = false, waveNumber = null } = {}) {
-    if (this.isGameOver || this.matchEnded) return;
-
-    if (typeof waveNumber === 'number' && Number.isFinite(waveNumber)) {
-      this.wave = waveNumber - 1;
-    }
-
-    this.wave++;
-    this.updateUI();
-
-    const isBossWave = (this.wave % BOSS_WAVE_INTERVAL === 0);
-    let nextDelay = 30000;
-
-    if (isBossWave) {
-      this.showMessage(`👑 第 ${this.wave} 波 - BOSS來襲！！！`, 0xFF0000);
-      this.bonusEnemiesPerWave = 0;
-      nextDelay = 32000;
-      this.time.delayedCall(2000, () => {
-        if (this.isGameOver || this.matchEnded) return;
-        this.spawnLocalEnemy({ isBoss: true });
-      });
-    } else {
-      // 基礎怪物數量：每10波增加一次（隨機3-7隻）
-      const bonusRounds = Math.floor(this.wave / BOSS_WAVE_INTERVAL);
-
-      // 計算累積增加的怪物數量
-      let totalIncrease = 0;
-      for (let i = 1; i <= bonusRounds; i++) {
-        const roundKey = i * BOSS_WAVE_INTERVAL;
-        // 如果這個10波還沒有隨機過，就隨機一次並記錄
-        if (!this.enemyIncreasePerTenWaves[roundKey]) {
-          this.enemyIncreasePerTenWaves[roundKey] = Math.floor(
-            Math.random() * (ENEMY_COUNT_PER_10_WAVES_MAX - ENEMY_COUNT_PER_10_WAVES_MIN + 1)
-          ) + ENEMY_COUNT_PER_10_WAVES_MIN;
-        }
-        totalIncrease += this.enemyIncreasePerTenWaves[roundKey];
-      }
-
-      const baseEnemyCount = BASE_ENEMY_COUNT + totalIncrease;
-      let totalEnemyCount = baseEnemyCount;
-
-      // 計算每10波後的間隔縮短（每10波縮短100ms，最低400ms）
-      const spawnInterval = Math.max(400, 1000 - bonusRounds * 100);
-
-      if (this.gameMode === 'singlePlayer' && this.bossDefeated) {
-        totalEnemyCount += this.bonusEnemiesPerWave;
-        this.showMessage(`🌊 第 ${this.wave} 波來襲！(+${this.bonusEnemiesPerWave} 額外怪物) [間隔${spawnInterval}ms]`, 0xFF6B6B);
-      } else {
-        this.showMessage(`🌊 第 ${this.wave} 波來襲！`);
-      }
-
-      // 生成隨機生怪時間序列
-      const spawnTimes = [];
-      for (let i = 0; i < totalEnemyCount; i++) {
-        spawnTimes.push(i * spawnInterval);
-      }
-
-      // 如果有額外怪物，將它們隨機插入到現有時間點（允許同時生多個）
-      if (this.gameMode === 'singlePlayer' && this.bossDefeated && this.bonusEnemiesPerWave > 0) {
-        for (let i = 0; i < this.bonusEnemiesPerWave; i++) {
-          // 隨機選擇一個已存在的時間點，讓額外怪和基礎怪同時生成
-          const randomIndex = Math.floor(Math.random() * baseEnemyCount);
-          spawnTimes[baseEnemyCount + i] = randomIndex * spawnInterval;
-        }
-        // 重新排序確保按時間順序生怪
-        spawnTimes.sort((a, b) => a - b);
-      }
-
-      nextDelay = (totalEnemyCount * spawnInterval / 1000 + 10) * 1000;
-
-      // 根據時間序列生怪
-      spawnTimes.forEach(delay => {
-        this.time.delayedCall(delay, () => {
-          if (this.isGameOver || this.matchEnded) return;
-          this.spawnLocalEnemy({ isBoss: false });
-        });
-      });
-    }
-
-    if (this.gameMode === 'singlePlayer') {
-      if (this.lives > 0) {
-        this.scheduleNextWave(nextDelay);
-      }
-      return;
-    }
-
-    if (this.playerNumber === 1 && !fromNetwork && SocketService.socket && this.roomId) {
-      SocketService.emit('wave-start', { roomId: this.roomId, wave: this.wave });
-    }
-
-    if (this.playerNumber === 1 && this.lives > 0 && !this.matchEnded) {
-      this.hostScheduleNextWave(nextDelay);
-    }
-  }
-
-  onBossDefeated() {
-    this.bossDefeated = true;
-    this.bonusEnemiesPerWave = Math.floor(Math.random() * 5) + 3;
-    if (this.playerTowers.length > 0) {
-      const randomTower = this.playerTowers[Math.floor(Math.random() * this.playerTowers.length)];
-      randomTower.upgrade();
-      this.showMessage(`🎁 Boss獎勵！
-${randomTower.config.emoji} 升至Lv.${randomTower.level}
-下一輪+${this.bonusEnemiesPerWave}怪`, 0xFFD700);
-    } else {
-      this.showMessage(`⚠️ 無塔可升級
-下一輪+${this.bonusEnemiesPerWave}怪`, 0xFFA500);
-    }
-  }
-
-  getAuraBonus() {
-    let attackSpeedBonus = 0;
-    let damageBonus = 0;
-    let enemySlowBonus = 0;
-    this.playerTowers.forEach(tower => {
-      if (tower.config.isAura) {
-        attackSpeedBonus += tower.config.auraAttackSpeedBonus * tower.level;
-        damageBonus += tower.config.auraDamageBonus * tower.level;
-        enemySlowBonus += tower.config.auraEnemySlowBonus * tower.level;
-      }
-    });
-    return { attackSpeedBonus, damageBonus, enemySlowBonus };
-  }
-
-  updateProjectiles(delta) {
-    this.projectiles = this.projectiles.filter(projectile => {
-      if (!projectile.target.active) {
-        projectile.graphic.destroy();
-        if (projectile.glow) projectile.glow.destroy();
-        return false;
-      }
-      const angle = Math.atan2(projectile.target.y - projectile.y, projectile.target.x - projectile.x);
-      const moveDistance = projectile.speed * (delta / 1000);
-      projectile.x += Math.cos(angle) * moveDistance;
-      projectile.y += Math.sin(angle) * moveDistance;
-      projectile.graphic.setPosition(projectile.x, projectile.y);
-      if (projectile.glow) projectile.glow.setPosition(projectile.x, projectile.y);
-      const distance = Phaser.Math.Distance.Between(projectile.x, projectile.y, projectile.target.x, projectile.target.y);
-      if (distance < 10) {
-        this.handleProjectileHit(projectile);
-        return false;
-      }
-      return true;
-    });
-  }
-
-  handleProjectileHit(projectile) {
-    const target = projectile.target;
-    const config = projectile.config;
-
-    // 記錄最後擊中此怪物的塔（用於金幣加成計算）
-    if (projectile.sourceTower) {
-      target.lastHitByTower = projectile.sourceTower;
-    }
-
-    // 基礎傷害
-    target.takeDamage(projectile.damage);
-
-    // 百分比真實傷害
-    if (config.percentDamage) {
-      const percentDmg = target.maxHealth * config.percentDamage;
-      target.takeDamage(percentDmg);
-      // 顯示特殊傷害數字
-      this.showPercentDamageText(target.x, target.y, percentDmg);
-    }
-
-    if (config.dotDamage) target.applyBurn(config.dotDamage, config.dotDuration);
-    if (config.poisonDamage) target.applyPoison(config.poisonDamage, config.poisonDuration);
-    if (config.slow) target.applySlow(config.slow, config.slowDuration);
-    if (config.freeze) target.applyFreeze(config.freezeDuration);
-
-    // 擊退效果
-    if (config.knockback) {
-      if (config.knockbackSplash && config.splashRadius) {
-        // 範圍擊退
-        this.applyKnockbackSplash(projectile.x, projectile.y, config);
-      } else {
-        // 單體擊退
-        this.applyKnockback(target, projectile.x, projectile.y, config.knockback);
-      }
-    }
-
-    if (config.splashRadius) this.applySplashDamage(projectile.x, projectile.y, config);
-    if (config.chainCount) this.applyLightningChain(target, config);
-
-    // 地面火焰區域
-    if (config.groundFireDamage && config.groundFireDuration) {
-      this.createGroundFire(projectile.x, projectile.y, config, projectile.sourceTower);
-    }
-
-    this.createHitEffect(projectile.x, projectile.y, config.effectColor);
-    projectile.graphic.destroy();
-    if (projectile.glow) projectile.glow.destroy();
-  }
-
-  showPercentDamageText(x, y, amount) {
-    const damageText = this.add.text(x + 20, y - 30, `-${Math.floor(amount)}%`, {
-      fontSize: '14px',
-      color: '#FF4500',
-      fontStyle: 'bold',
-      stroke: '#8B0000',
-      strokeThickness: 3
-    }).setOrigin(0.5);
-    damageText.setDepth(60);
-
-    this.tweens.add({
-      targets: damageText,
-      y: y - 60,
-      alpha: 0,
-      duration: 1000,
-      ease: 'Power2',
-      onComplete: () => damageText.destroy()
-    });
-  }
-
-  applyKnockback(enemy, fromX, fromY, knockbackDistance) {
-    if (!enemy.active) return;
-
-    // 計算擊退方向（從攻擊點指向敵人）
-    const angle = Math.atan2(enemy.y - fromY, enemy.x - fromX);
-    const knockbackX = Math.cos(angle) * knockbackDistance;
-    const knockbackY = Math.sin(angle) * knockbackDistance;
-
-    // 應用擊退，並確保不會推出地圖邊界
-    const newX = Math.max(0, Math.min(this.cameras.main.width, enemy.x + knockbackX));
-    const newY = Math.max(0, Math.min(this.cameras.main.height, enemy.y + knockbackY));
-
-    // 使用tween實現平滑的擊退動畫
-    this.tweens.add({
-      targets: enemy,
-      x: newX,
-      y: newY,
-      duration: 200,
-      ease: 'Power2'
-    });
-
-    // 創建蒸汽特效
-    this.createSteamEffect(enemy.x, enemy.y);
-  }
-
-  applyKnockbackSplash(x, y, config) {
-    this.enemies.forEach(enemy => {
-      if (!enemy.active) return;
-      const distance = Phaser.Math.Distance.Between(x, y, enemy.x, enemy.y);
-      if (distance <= config.splashRadius) {
-        this.applyKnockback(enemy, x, y, config.knockback);
-      }
-    });
-  }
-
-  createSteamEffect(x, y) {
-    // 蒸汽粒子效果
-    const particles = this.add.particles(x, y, 'particle', {
-      speed: { min: 30, max: 60 },
-      scale: { start: 1, end: 0 },
-      alpha: { start: 0.6, end: 0 },
-      tint: [0xF0F8FF, 0xE0FFFF, 0x87CEEB],
-      lifespan: 400,
-      quantity: 8,
-      blendMode: 'NORMAL'
-    });
-    particles.setDepth(55);
-
-    this.time.delayedCall(400, () => particles.destroy());
-  }
-
-  createGroundFire(x, y, config, sourceTower) {
-    // 檢查是否超過最大火焰區域數量
-    if (sourceTower && config.maxGroundFires) {
-      const towerFires = this.groundFires.filter(f => f.sourceTower === sourceTower);
-      if (towerFires.length >= config.maxGroundFires) {
-        // 移除最舊的火焰
-        const oldestFire = towerFires[0];
-        this.removeGroundFire(oldestFire);
-      }
-    }
-
-    const radius = config.groundFireRadius || 100;
-    const duration = config.groundFireDuration || 5000;
-    const damage = config.groundFireDamage || 10;
-
-    // 創建火焰視覺效果
-    const fireCircle = this.add.circle(x, y, radius, 0xFF4500, 0.3);
-    fireCircle.setStrokeStyle(3, 0xFF0000, 0.8);
-    fireCircle.setDepth(15);
-
-    // 火焰emoji裝飾
-    const fireEmoji = this.add.text(x, y, '🔥', {
-      fontSize: '32px'
-    }).setOrigin(0.5);
-    fireEmoji.setDepth(16);
-
-    // 創建持續的火焰粒子
-    const fireParticles = this.add.particles(x, y, 'particle', {
-      speed: { min: 20, max: 40 },
-      scale: { start: 0.8, end: 0 },
-      alpha: { start: 0.8, end: 0 },
-      tint: [0xFF4500, 0xFF6347, 0xFFD700],
-      lifespan: 600,
-      frequency: 100,
-      blendMode: 'ADD'
-    });
-    fireParticles.setDepth(16);
-
-    const groundFire = {
-      x,
-      y,
-      radius,
-      damage,
-      damageInterval: 500, // 每0.5秒造成一次傷害
-      lastDamageTime: Date.now(),
-      duration,
-      createdAt: Date.now(),
-      circle: fireCircle,
-      emoji: fireEmoji,
-      particles: fireParticles,
-      sourceTower
-    };
-
-    this.groundFires.push(groundFire);
-  }
-
-  updateGroundFires(delta) {
-    const currentTime = Date.now();
-
-    this.groundFires = this.groundFires.filter(fire => {
-      const elapsed = currentTime - fire.createdAt;
-
-      // 檢查是否過期
-      if (elapsed >= fire.duration) {
-        this.removeGroundFire(fire);
-        return false;
-      }
-
-      // 對範圍內的敵人造成傷害
-      if (currentTime - fire.lastDamageTime >= fire.damageInterval) {
-        this.enemies.forEach(enemy => {
-          if (!enemy.active) return;
-          const distance = Phaser.Math.Distance.Between(fire.x, fire.y, enemy.x, enemy.y);
-          if (distance <= fire.radius) {
-            enemy.takeDamage(fire.damage);
-            enemy.createBurnParticles(); // 顯示燃燒特效
-          }
-        });
-        fire.lastDamageTime = currentTime;
-      }
-
-      // 更新視覺效果（脈動動畫）
-      const progress = elapsed / fire.duration;
-      fire.circle.setAlpha(0.3 * (1 - progress * 0.5));
-
-      return true;
-    });
-  }
-
-  removeGroundFire(fire) {
-    if (fire.circle) fire.circle.destroy();
-    if (fire.emoji) fire.emoji.destroy();
-    if (fire.particles) fire.particles.destroy();
-  }
-
-  createMeteorStrike(count, config, sourceTower, auraBonus) {
-    // 獲取路徑點
-    const path = this.gameMode === 'multiplayer' ? this.playerPath : this.path;
-    if (!path || path.length === 0) return;
-
-    for (let i = 0; i < count; i++) {
-      // 在路徑上隨機選擇一個位置
-      const randomIndex = Phaser.Math.Between(0, path.length - 1);
-      const targetPoint = path[randomIndex];
-
-      // 添加一些隨機偏移
-      const offsetX = Phaser.Math.Between(-50, 50);
-      const offsetY = Phaser.Math.Between(-50, 50);
-      const x = targetPoint.x + offsetX;
-      const y = targetPoint.y + offsetY;
-
-      // 延遲召喚隕石（讓它們不要同時落下）
-      this.time.delayedCall(i * 150, () => {
-        this.spawnMeteor(x, y, config, sourceTower, auraBonus);
-      });
-    }
-  }
-
-  spawnMeteor(x, y, config, sourceTower, auraBonus) {
-    // 創建隕石視覺效果（從上方快速墜落）
-    const startY = -100;
-    const meteorEmoji = this.add.text(x, startY, '☄️', {
-      fontSize: '48px'
-    }).setOrigin(0.5);
-    meteorEmoji.setDepth(100);
-
-    // 創建尾焰粒子
-    const trailParticles = this.add.particles(x, startY, 'particle', {
-      speed: { min: 50, max: 100 },
-      scale: { start: 1.5, end: 0 },
-      alpha: { start: 0.8, end: 0 },
-      tint: [0xFF4500, 0xFF6347, 0xFFD700],
-      lifespan: 300,
-      frequency: 50,
-      blendMode: 'ADD'
-    });
-    trailParticles.setDepth(99);
-
-    // 隕石墜落動畫
-    this.tweens.add({
-      targets: [meteorEmoji],
-      y: y,
-      duration: 800,
-      ease: 'Power3',
-      onUpdate: (tween) => {
-        // 粒子跟隨隕石
-        trailParticles.setPosition(meteorEmoji.x, meteorEmoji.y);
-      },
-      onComplete: () => {
-        // 隕石撞擊
-        trailParticles.destroy();
-        meteorEmoji.destroy();
-
-        // 計算實際傷害（應用光環加成）
-        let actualDamage = config.damage;
-        if (auraBonus && auraBonus.damageBonus > 0) {
-          actualDamage = config.damage * (1 + auraBonus.damageBonus);
-        }
-
-        // 撞擊傷害
-        this.enemies.forEach(enemy => {
-          if (!enemy.active) return;
-          const distance = Phaser.Math.Distance.Between(x, y, enemy.x, enemy.y);
-          if (distance <= config.meteorSplashRadius) {
-            enemy.takeDamage(actualDamage);
-            if (sourceTower) {
-              enemy.lastHitByTower = sourceTower;
-            }
-          }
-        });
-
-        // 創建爆炸特效
-        this.createMeteorExplosion(x, y, config);
-
-        // 留下地面火焰
-        if (config.groundFireDamage) {
-          this.createGroundFire(x, y, config, sourceTower);
-        }
-      }
-    });
-  }
-
-  createMeteorExplosion(x, y, config) {
-    // 爆炸圈
-    const explosionRing = this.add.circle(x, y, 20, 0xFF4500, 0.8);
-    explosionRing.setDepth(55);
-
-    this.tweens.add({
-      targets: explosionRing,
-      radius: config.meteorSplashRadius,
-      alpha: 0,
-      duration: 500,
-      ease: 'Power2',
-      onComplete: () => explosionRing.destroy()
-    });
-
-    // 爆炸粒子
-    const explosionParticles = this.add.particles(x, y, 'particle', {
-      speed: { min: 100, max: 300 },
-      scale: { start: 2, end: 0 },
-      alpha: { start: 1, end: 0 },
-      tint: [0xFF4500, 0xFF6347, 0xFFD700, 0xFF8C00],
-      lifespan: 800,
-      quantity: 30,
-      blendMode: 'ADD'
-    });
-    explosionParticles.setDepth(60);
-
-    this.time.delayedCall(800, () => explosionParticles.destroy());
-
-    // 震動效果
-    this.cameras.main.shake(100, 0.003);
-  }
-
-  applySplashDamage(x, y, config) {
-    this.enemies.forEach(enemy => {
-      if (!enemy.active) return;
-      const distance = Phaser.Math.Distance.Between(x, y, enemy.x, enemy.y);
-      if (distance <= config.splashRadius) {
-        enemy.takeDamage(config.damage * 0.5);
-        if (config.poisonDamage) enemy.applyPoison(config.poisonDamage, config.poisonDuration);
-      }
-    });
-    const explosionRing = this.add.circle(x, y, 10, config.effectColor, 0.4).setDepth(55);
-    this.tweens.add({ targets: explosionRing, radius: config.splashRadius, alpha: 0, duration: 400, ease: 'Power2', onComplete: () => explosionRing.destroy() });
-  }
-
-  applyLightningChain(startTarget, config) {
-    let currentTarget = startTarget;
-    const hitTargets = [startTarget];
-    let chainDecay = config.chainPercentDecay || 0.7; // 預設70%，或使用配置的遞減率
-
-    for (let i = 1; i < config.chainCount; i++) {
-      let nextTarget = null;
-      let closestDistance = config.chainRange;
-      this.enemies.forEach(enemy => {
-        if (!enemy.active || hitTargets.includes(enemy)) return;
-        const distance = Phaser.Math.Distance.Between(currentTarget.x, currentTarget.y, enemy.x, enemy.y);
-        if (distance < closestDistance) {
-          nextTarget = enemy;
-          closestDistance = distance;
-        }
-      });
-      if (nextTarget) {
-        this.drawLightning(currentTarget.x, currentTarget.y, nextTarget.x, nextTarget.y);
-
-        // 基礎傷害（連鎖遞減）
-        const chainDamage = config.damage * Math.pow(chainDecay, i);
-        nextTarget.takeDamage(chainDamage);
-
-        // 百分比真傷（連鎖遞減）
-        if (config.percentDamage) {
-          const percentDmg = nextTarget.maxHealth * config.percentDamage * Math.pow(chainDecay, i);
-          nextTarget.takeDamage(percentDmg);
-          this.showPercentDamageText(nextTarget.x, nextTarget.y, percentDmg);
-        }
-
-        hitTargets.push(nextTarget);
-        currentTarget = nextTarget;
-      } else {
-        break;
-      }
-    }
-  }
-
-  drawLightning(x1, y1, x2, y2) {
-    const graphics = this.add.graphics().setDepth(55);
-    graphics.lineStyle(3, 0xFFFF00, 1).lineBetween(x1, y1, x2, y2);
-    graphics.lineStyle(1, 0xFFFFFF, 1).lineBetween(x1, y1, x2, y2);
-    this.tweens.add({ targets: graphics, alpha: 0, duration: 200, onComplete: () => graphics.destroy() });
-  }
-  
   drawArrow(x, y, angle, color, depth) {
-    const arrowGraphics = this.add.graphics().setDepth(depth);
-    arrowGraphics.fillStyle(color, 1).lineStyle(2, 0x000000, 1);
-    const arrowLength = 18; const arrowWidth = 12;
-    const tipX = arrowLength / 2; const tipY = 0;
-    const leftX = -arrowLength / 2; const leftY = -arrowWidth / 2;
-    const rightX = -arrowLength / 2; const rightY = arrowWidth / 2;
-    const cos = Math.cos(angle); const sin = Math.sin(angle);
-    const tip = { x: x + tipX * cos - tipY * sin, y: y + tipX * sin + tipY * cos };
-    const left = { x: x + leftX * cos - leftY * sin, y: y + leftX * sin + leftY * cos };
-    const right = { x: x + rightX * cos - rightY * sin, y: y + rightX * sin + rightY * cos };
-    arrowGraphics.beginPath().moveTo(tip.x, tip.y).lineTo(left.x, left.y).lineTo(right.x, right.y).closePath().fillPath().strokePath();
-    return arrowGraphics;
+    const arrowSize = 15;
+    const graphics = this.add.graphics();
+    graphics.fillStyle(color, 0.6);
+    graphics.beginPath();
+    graphics.moveTo(x, y);
+    graphics.lineTo(x - arrowSize * Math.cos(angle - Math.PI / 6), y - arrowSize * Math.sin(angle - Math.PI / 6));
+    graphics.lineTo(x - arrowSize * Math.cos(angle + Math.PI / 6), y - arrowSize * Math.sin(angle + Math.PI / 6));
+    graphics.closePath();
+    graphics.fillPath();
+    graphics.setDepth(depth);
   }
 
-  createHitEffect(x, y, color) {
-    const particles = this.add.particles(x, y, 'particle', { speed: { min: 50, max: 150 }, scale: { start: 0.8, end: 0 }, alpha: { start: 1, end: 0 }, tint: color, lifespan: 300, quantity: 10, blendMode: 'ADD' }).setDepth(55);
-    this.time.delayedCall(300, () => particles.destroy());
-  }
-  
-  createBuildEffect(x, y, color) {
-    const circle = this.add.circle(x, y, 5, color);
-    this.tweens.add({ targets: circle, radius: 50, alpha: 0, duration: 500, ease: 'Power2', onComplete: () => circle.destroy() });
-  }
-
-  createUpgradeEffect(x, y, color) {
-    const particles = this.add.particles(x, y, 'particle', { speed: { min: 80, max: 150 }, scale: { start: 1.2, end: 0 }, alpha: { start: 1, end: 0 }, tint: [color, 0xFFD700, 0xFFFFFF], lifespan: 600, quantity: 20, blendMode: 'ADD' });
-    this.time.delayedCall(600, () => particles.destroy());
-    const ring = this.add.circle(x, y, 10, color, 0.6).setDepth(100);
-    this.tweens.add({ targets: ring, radius: 60, alpha: 0, duration: 500, ease: 'Power2', onComplete: () => ring.destroy() });
-  }
-
-  createCraftEffect(x, y, color) {
-    for (let i = 0; i < 3; i++) {
-      const ring = this.add.circle(x, y, 10, color, 0.5);
-      this.tweens.add({ targets: ring, radius: 80 + i * 20, alpha: 0, duration: 800, delay: i * 100, ease: 'Power2', onComplete: () => ring.destroy() });
-    }
-    const particles = this.add.particles(x, y, 'particle', { speed: { min: 100, max: 300 }, scale: { start: 1.5, end: 0 }, alpha: { start: 1, end: 0 }, tint: [color, 0xFFD700, 0xFFFFFF], lifespan: 800, quantity: 30, blendMode: 'ADD' });
-    this.time.delayedCall(800, () => particles.destroy());
-  }
-
-  showMessage(text, color = 0x4ECDC4) {
-    const message = this.add.text(this.cameras.main.width / 2, 30, text, {
-      fontSize: '24px',
-      color: '#' + color.toString(16).padStart(6, '0'),
-      fontStyle: 'bold',
-      stroke: '#000000',
-      strokeThickness: 4,
-      padding: {x: 5, y: 5}
-    }).setOrigin(0.5).setDepth(400);
-    this.tweens.add({ targets: message, y: 20, alpha: 0, duration: 2500, ease: 'Power2', onComplete: () => message.destroy() });
-  }
-
-  addGold(amount) {
-    this.gold += amount;
-    this.score += amount;
-    this.updateUI();
-  }
-
-  loseLife(amount) {
-    if (this.matchEnded) return;
-    this.lives -= amount;
-    if (this.lives < 0) this.lives = 0;
-    if (this.gameMode === 'multiplayer' && SocketService.socket && this.roomId) {
-      SocketService.emit('life-update', { roomId: this.roomId, lives: this.lives });
-    }
-    this.updateUI();
-    if (this.lives <= 0) {
-      this.gameOver();
-    } else {
-      this.cameras.main.shake(200, 0.01);
-    }
-  }
-
-  gameOver() {
-    if (this.gameMode === 'multiplayer') {
-      this.endMultiplayerMatch({
-        victory: false,
-        title: '你已經失敗！',
-        subtitle: `最終分數: ${this.score}`,
-        notifyOpponent: true
-      });
-      return;
-    }
-
-    this.isGameOver = true;
-    this.matchEnded = true;
-    if (this.waveTimerEvent) {
-      this.waveTimerEvent.remove(false);
-      this.waveTimerEvent = null;
-    }
-    const overlay = this.add.rectangle(this.cameras.main.width / 2, this.cameras.main.height / 2, this.cameras.main.width, this.cameras.main.height, 0x000000, 0.7).setDepth(300);
-    this.add.text(this.cameras.main.width / 2, this.cameras.main.height / 2 - 100, '你已經失敗！', { fontSize: '48px', color: '#FF4444', fontStyle: 'bold', stroke: '#000000', strokeThickness: 6, padding: {x:10, y:10} }).setOrigin(0.5).setDepth(301);
-    this.add.text(this.cameras.main.width / 2, this.cameras.main.height / 2, `最終分數: ${this.score}`, { fontSize: '24px', color: '#FFD700', padding: { y: 10 } }).setOrigin(0.5).setDepth(301);
-    const buttonX = this.cameras.main.width / 2;
-    const buttonY = this.cameras.main.height / 2 + 100;
-    const restartButton = this.add.rectangle(buttonX, buttonY, 200, 60, 0x4CAF50).setStrokeStyle(3, 0xFFFFFF).setInteractive({ useHandCursor: true }).setDepth(301);
-    const buttonText = this.add.text(buttonX, buttonY, '重新開始', { fontSize: '28px', color: '#FFFFFF', fontStyle: 'bold', padding: { x: 10, y: 5 } }).setOrigin(0.5).setDepth(302);
-    restartButton.on('pointerover', () => { restartButton.setFillStyle(0x5CD660); this.tweens.add({ targets: restartButton, scale: 1.05, duration: 200 }); });
-    restartButton.on('pointerout', () => { restartButton.setFillStyle(0x4CAF50); this.tweens.add({ targets: restartButton, scale: 1, duration: 200 }); });
-    restartButton.on('pointerdown', () => { this.scene.restart({ mode: this.gameMode }); });
-  }
   // #endregion
 }

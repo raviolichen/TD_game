@@ -542,8 +542,9 @@ export default class Enemy {
 
     // 顯示Boss技能
     const abilityText = this.bossAbilities.map(a => `${a.icon}${a.desc}`).join(' ');
-    if (this.scene.showMessage) {
-      this.scene.showMessage(`Boss技能: ${abilityText}`, 0xFF00FF);
+    const uiManager = this.scene.uiManager;
+    if (uiManager && uiManager.showMessage) {
+      uiManager.showMessage(`Boss技能: ${abilityText}`, 0xFF00FF);
     }
 
     // 初始化防禦技能的傷害減免（如果有）
