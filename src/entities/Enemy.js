@@ -2,12 +2,70 @@
 const MINION_ABILITY_START_WAVE = 11; // 從第幾波開始小怪獲得技能
 const HEALTH_BONUS_WAVE_INTERVAL = 10; // 每幾波額外增加血量
 
+// 每波專屬怪物圖案系統（1-100波）
+function getWaveMonsterEmoji(waveNumber) {
+  // 101波之後使用固定圖案
+  if (waveNumber > 100) {
+    return '🤡'; // 固定圖案，後續會有雙倍體型
+  }
+  
+  const monstersByWave = [
+    // 第1-10波：昆蟲軍團
+    '🐛', '🐝', '🐜', '🪲', '🦗', '🐞', '🕷️', '🦂', '🪰', '🦟',
+    // 第11-20波：海洋怪物
+    '🐙', '🦑', '🦀', '🦞', '🐟', '🦈', '🐠', '🐡', '🦭', '🐳',
+    // 第21-30波：飛行生物
+    '🦅', '🦆', '🦉', '🦇', '🐦', '🕊️', '🦜', '🦢', '🪶', '🐔',
+    // 第31-40波：哺乳動物
+    '🐺', '🦊', '🐻', '🐼', '🦘', '🐨', '🦒', '🦏', '🐘', '🦛',
+    // 第41-50波：爬蟲類
+    '🐍', '🦎', '🐊', '🐢', '🦖', '🦕', '🐲', '🐉', '🦴', '🗿',
+    // 第51-60波：神話生物
+    '👹', '👺', '👿', '💀', '☠️', '👻', '🎃', '🧟', '🧛', '🧌',
+    // 第61-70波：機械軍團
+    '🤖', '⚙️', '🔧', '⚡', '💻', '📡', '🛸', '🚀', '⭐', '💫',
+    // 第71-80波：元素精靈
+    '🔥', '💧', '🌪️', '❄️', '⚡', '☀️', '🌙', '✨', '💎', '🌟',
+    // 第81-90波：植物怪物
+    '🌵', '🌲', '🌳', '🍄', '🌿', '🌱', '🌾', '🌻', '🌹', '🌺',
+    // 第91-100波：超自然存在
+    '👽', '🛸', '🌌', '🔮', '🎭', '🗯️', '💭', '🌀', '♠️', '🃏'
+  ];
+  
+  return monstersByWave[waveNumber - 1] || '👾';
+}
+
+function getWaveBossEmoji(waveNumber) {
+  // 101波之後使用固定BOSS圖案
+  if (waveNumber > 100) {
+    return '🤡'; // 固定BOSS圖案，後續會有雙倍體型
+  }
+  
+  // 每10波一個BOSS，共10種BOSS
+  const bossEmojis = [
+    '🕷️', // 第10波：蟲王
+    '🦈', // 第20波：海王
+    '🦅', // 第30波：天空領主
+    '🐻', // 第40波：獸王
+    '🐲', // 第50波：龍王
+    '👹', // 第60波：惡魔王
+    '🤖', // 第70波：機械王
+    '🔥', // 第80波：元素王
+    '🌳', // 第90波：森林王
+    '👽'  // 第100波：外星霸主
+  ];
+  
+  const bossIndex = Math.floor(waveNumber / 10) - 1;
+  return bossEmojis[bossIndex] || '🐲';
+}
+
 export default class Enemy {
   constructor(scene, path, waveNumber = 1, isBoss = false) {
     this.scene = scene;
     this.path = path;
     this.pathIndex = 0;
     this.isBoss = isBoss;
+    this.waveNumber = waveNumber;
 
     // 根據波數調整屬性
     let baseHealth = 100 + (waveNumber * 25); // 血量成長速度提升25%
@@ -74,27 +132,33 @@ export default class Enemy {
     let emoji, fontSize, healthBarY, healthBarWidth;
 
     if (this.isBoss) {
-      // BOSS使用特殊emoji和4倍體型
-      const bossEmojis = [
-        '🐲', '👑', '💀', '🦖', '👿',
-        '🐉', '😈', '🦁', '🐯', '🐺',
-        '🦅', '🦂', '🐍', '🕷️', '🦇'
-      ];
-      emoji = Phaser.Math.RND.pick(bossEmojis);
-      fontSize = '112px'; // 28px * 4
-      healthBarY = this.y - 70; // 調整血條位置
-      healthBarWidth = 160; // 血條也要加大 (40 * 4)
+      // BOSS使用波數專屬圖案
+      emoji = getWaveBossEmoji(this.waveNumber);
+      
+      // 101波之後BOSS雙倍體型
+      if (this.waveNumber > 100) {
+        fontSize = '224px'; // 28px * 8 (雙倍於原本的4倍)
+        healthBarY = this.y - 140; // 調整血條位置
+        healthBarWidth = 320; // 血條也要加大
+      } else {
+        fontSize = '112px'; // 28px * 4
+        healthBarY = this.y - 70; // 調整血條位置
+        healthBarWidth = 160; // 血條也要加大 (40 * 4)
+      }
     } else {
-      // 普通怪物
-      const monsterEmojis = [
-        '👾', '👹', '👺', '🤖', '👻', '💀',
-        '🧟', '🧛', '🧌', '👽', '🦴', '🎃',
-        '🐀', '🐊', '🦎', '🐝', '🐜', '🪲'
-      ];
-      emoji = Phaser.Math.RND.pick(monsterEmojis);
-      fontSize = '28px';
-      healthBarY = this.y - 20;
-      healthBarWidth = 40;
+      // 普通怪物使用波數專屬圖案
+      emoji = getWaveMonsterEmoji(this.waveNumber);
+      
+      // 101波之後普通怪物雙倍體型
+      if (this.waveNumber > 100) {
+        fontSize = '56px'; // 28px * 2 (雙倍體型)
+        healthBarY = this.y - 40; // 調整血條位置
+        healthBarWidth = 80; // 血條也要加大
+      } else {
+        fontSize = '28px';
+        healthBarY = this.y - 20;
+        healthBarWidth = 40;
+      }
     }
     this.visualEmoji = emoji;
 
@@ -124,9 +188,29 @@ export default class Enemy {
 
     // 如果有技能，顯示技能圖標
     if (this.bossAbilities.length > 0) {
-      const iconOffsetX = this.isBoss ? 60 : 15;
-      const iconOffsetY = this.isBoss ? -60 : -15;
-      const iconFontSize = this.isBoss ? '24px' : '16px';
+      let iconOffsetX, iconOffsetY, iconFontSize;
+      
+      if (this.isBoss) {
+        if (this.waveNumber > 100) {
+          iconOffsetX = 120; // 雙倍距離
+          iconOffsetY = -120; // 雙倍距離
+          iconFontSize = '48px'; // 雙倍字體
+        } else {
+          iconOffsetX = 60;
+          iconOffsetY = -60;
+          iconFontSize = '24px';
+        }
+      } else {
+        if (this.waveNumber > 100) {
+          iconOffsetX = 30; // 雙倍距離
+          iconOffsetY = -30; // 雙倍距離
+          iconFontSize = '32px'; // 雙倍字體
+        } else {
+          iconOffsetX = 15;
+          iconOffsetY = -15;
+          iconFontSize = '16px';
+        }
+      }
 
       // 顯示所有技能圖標
       this.abilityIndicators = [];
@@ -402,7 +486,12 @@ export default class Enemy {
     if (!this.sprite) return;
 
     // 計算血條相對位置（隨怪物y軸移動）
-    const healthBarYOffset = this.isBoss ? -70 : -20;
+    let healthBarYOffset;
+    if (this.isBoss) {
+      healthBarYOffset = this.waveNumber > 100 ? -140 : -70;
+    } else {
+      healthBarYOffset = this.waveNumber > 100 ? -40 : -20;
+    }
     const currentHealthBarY = this.y + healthBarYOffset;
 
     // 更新位置
@@ -424,15 +513,36 @@ export default class Enemy {
     }
 
     // 更新效果圖標位置
-    const effectIconY = this.isBoss ? this.y - 85 : this.y - 35;
+    let effectIconY;
+    if (this.isBoss) {
+      effectIconY = this.waveNumber > 100 ? this.y - 170 : this.y - 85;
+    } else {
+      effectIconY = this.waveNumber > 100 ? this.y - 70 : this.y - 35;
+    }
     this.effectIndicators.forEach((indicator, index) => {
       indicator.setPosition(this.x - 15 + (index * 10), effectIconY);
     });
 
     // 更新技能圖標位置
     if (this.abilityIndicators && this.abilityIndicators.length > 0) {
-      const iconOffsetX = this.isBoss ? 60 : 15;
-      const iconOffsetY = this.isBoss ? -60 : -15;
+      let iconOffsetX, iconOffsetY;
+      if (this.isBoss) {
+        if (this.waveNumber > 100) {
+          iconOffsetX = 120; // 雙倍距離
+          iconOffsetY = -120; // 雙倍距離
+        } else {
+          iconOffsetX = 60;
+          iconOffsetY = -60;
+        }
+      } else {
+        if (this.waveNumber > 100) {
+          iconOffsetX = 30; // 雙倍距離
+          iconOffsetY = -30; // 雙倍距離
+        } else {
+          iconOffsetX = 15;
+          iconOffsetY = -15;
+        }
+      }
       this.abilityIndicators.forEach((indicator, index) => {
         indicator.setPosition(this.x + iconOffsetX + (index * 25), this.y + iconOffsetY);
       });
@@ -478,8 +588,8 @@ export default class Enemy {
     // 金幣獎勵已經在 onEnemyDied 中處理（包含加成計算）
 
     // 如果是Boss，觸發Boss擊敗獎勵
-    if (this.isBoss && this.scene.onBossDefeated) {
-      this.scene.onBossDefeated();
+    if (this.isBoss && this.scene.waveManager && this.scene.waveManager.onBossDefeated) {
+      this.scene.waveManager.onBossDefeated();
     }
   }
 
@@ -487,8 +597,8 @@ export default class Enemy {
     this.active = false;
 
     // 扣除生命
-    if (this.scene.loseLife) {
-      this.scene.loseLife(this.damage);
+    if (this.scene.economyManager && this.scene.economyManager.loseLife) {
+      this.scene.economyManager.loseLife(this.damage);
     }
     if (this.scene && this.scene.onEnemyEscaped) {
       this.scene.onEnemyEscaped(this);

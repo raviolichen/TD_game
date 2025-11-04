@@ -15,6 +15,14 @@ export default class Tower {
     this.networkId = null;
     this.owner = 'self';
     this.isRemote = false;
+    
+    // 追蹤總投資成本（建造+升級）
+    this.totalInvestment = this.config.cost;
+    
+    // 陷阱塔專用屬性
+    if (this.config.maxTraps) {
+      this.activeTrapCount = 0;
+    }
 
     this.createVisuals();
     this.createRangeIndicator();
@@ -103,6 +111,21 @@ export default class Tower {
     if (this.freezeDuration && this.freezeDuration > 0) {
       this.freezeDuration -= 16; // 假設60fps，每幀約16ms
       return; // 被凍結時不攻擊
+    }
+
+    // 陷阱塔特殊處理（放置陷阱而非普攻）
+    if (this.config.maxTraps && this.config.trapDuration) {
+      // 計算實際放置速度
+      let actualFireRate = this.config.fireRate;
+      if (auraBonus && auraBonus.attackSpeedBonus > 0) {
+        actualFireRate = this.config.fireRate / (1 + auraBonus.attackSpeedBonus);
+      }
+
+      if (time > this.lastFired + actualFireRate) {
+        this.placeTrap();
+        this.lastFired = time;
+      }
+      return;
     }
 
     // 隕石塔特殊處理（全地圖攻擊，不需要目標）
@@ -265,9 +288,18 @@ export default class Tower {
   }
 
   upgrade() {
+    // 計算升級成本並添加到總投資
+    const upgradeCost = Math.floor(this.config.cost * 0.6);
+    this.totalInvestment += upgradeCost;
+    
     this.level++;
     this.config.damage *= 1.2;
     this.config.range *= 1.05; // 降低範圍增長率從1.1到1.05，避免後期過於強大
+    
+    // 地面火焰傷害也隨升級提升
+    if (this.config.groundFireDamage) {
+      this.config.groundFireDamage *= 1.2;
+    }
 
     // 更新範圍圈
     this.rangeCircle.setRadius(this.config.range);
@@ -319,6 +351,103 @@ export default class Tower {
     this.levelText = null;
     this.rangeCircle = null;
     this.visualElements = null;
+  }
+
+  placeTrap() {
+    // 檢查是否已達到最大陷阱數量
+    if (this.activeTrapCount >= this.config.maxTraps) {
+      return;
+    }
+
+    // 獲取路徑點
+    const path = this.scene.gameMode === 'multiplayer' ? this.scene.playerPath : this.scene.path;
+    if (!path || path.length === 0) return;
+
+    // 在塔的範圍內選擇路徑正中間的位置放置陷阱
+    const validPositions = [];
+    path.forEach(point => {
+      const distance = Phaser.Math.Distance.Between(this.x, this.y, point.x, point.y);
+      if (distance <= this.config.range) {
+        // 直接放在路徑點上，不偏移
+        validPositions.push({
+          x: point.x,
+          y: point.y
+        });
+      }
+    });
+
+    if (validPositions.length === 0) return;
+
+    // 隨機選擇一個位置
+    const trapPosition = Phaser.Math.RND.pick(validPositions);
+    
+    // 創建陷阱
+    this.createTrap(trapPosition.x, trapPosition.y);
+    
+    // 播放放置動畫
+    this.playFireAnimation();
+  }
+
+  createTrap(x, y) {
+    // 隨機選擇陷阱類型
+    const trapTypes = [
+      { emoji: '💥', effect: 'damage', color: 0xFF4500 },      // 爆炸陷阱
+      { emoji: '❄️', effect: 'freeze', color: 0x87CEEB },      // 冰凍陷阱
+      { emoji: '☠️', effect: 'poison', color: 0x32CD32 },      // 毒性陷阱
+      { emoji: '⚡', effect: 'stun', color: 0xFFFF00 }         // 電擊陷阱
+    ];
+    
+    const trapType = Phaser.Math.RND.pick(trapTypes);
+    
+    // 創建陷阱視覺
+    const trapCircle = this.scene.add.circle(x, y, 15, trapType.color, 0.3);
+    trapCircle.setStrokeStyle(2, trapType.color, 0.8);
+    trapCircle.setDepth(10);
+    
+    const trapEmoji = this.scene.add.text(x, y, trapType.emoji, {
+      fontSize: '20px'
+    }).setOrigin(0.5);
+    trapEmoji.setDepth(11);
+    
+    // 脈動動畫
+    this.scene.tweens.add({
+      targets: [trapCircle, trapEmoji],
+      scale: { from: 1, to: 1.2 },
+      duration: 1000,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut'
+    });
+
+    const trap = {
+      x,
+      y,
+      type: trapType.effect,
+      circle: trapCircle,
+      emoji: trapEmoji,
+      triggered: false,
+      createdAt: Date.now(),
+      duration: this.config.trapDuration,
+      sourceTower: this
+    };
+
+    this.activeTrapCount++;
+
+    // 通知場景管理器追蹤陷阱
+    if (this.scene.effectManager && this.scene.effectManager.addTrap) {
+      this.scene.effectManager.addTrap(trap);
+    } else {
+      // 如果沒有專門的陷阱管理器，使用簡單的定時器
+      this.scene.time.delayedCall(this.config.trapDuration, () => {
+        this.removeTrap(trap);
+      });
+    }
+  }
+
+  removeTrap(trap) {
+    if (trap.circle) trap.circle.destroy();
+    if (trap.emoji) trap.emoji.destroy();
+    this.activeTrapCount = Math.max(0, this.activeTrapCount - 1);
   }
 
   getInfo() {

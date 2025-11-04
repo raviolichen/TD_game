@@ -337,6 +337,168 @@ export default class TowerManager {
   }
 
   /**
+   * 顯示販售確認對話框
+   */
+  showSellConfirmDialog(tower) {
+    if (!tower || !tower.sprite || !tower.sprite.active) return;
+
+    const sellPrice = Math.floor(tower.totalInvestment * 0.7);
+    
+    // 先隱藏升級面板
+    this.hideUpgradePanel();
+
+    // 創建確認對話框
+    const dialogX = tower.x;
+    const dialogY = tower.y;
+    const dialogWidth = 200;
+    const dialogHeight = 120;
+    const BASE_DEPTH = 300;
+
+    this.sellConfirmDialog = {};
+
+    // 背景
+    this.sellConfirmDialog.bg = this.scene.add.rectangle(dialogX, dialogY, dialogWidth, dialogHeight, 0x2C3E50, 0.95)
+      .setStrokeStyle(3, 0xFF6347)
+      .setDepth(BASE_DEPTH)
+      .setInteractive();
+    this.sellConfirmDialog.bg.on('pointerdown', (p) => p.event.stopPropagation());
+
+    // 標題
+    this.sellConfirmDialog.title = this.scene.add.text(dialogX, dialogY - 35, '確認販售？', {
+      fontSize: '16px',
+      color: '#FFFFFF',
+      fontStyle: 'bold',
+      padding: { x: 8, y: 4 }
+    }).setOrigin(0.5).setDepth(BASE_DEPTH + 1);
+
+    // 塔信息
+    this.sellConfirmDialog.info = this.scene.add.text(dialogX, dialogY - 10, `${tower.config.emoji} ${tower.config.name} Lv.${tower.level}`, {
+      fontSize: '14px',
+      color: '#FFD700',
+      padding: { x: 6, y: 3 }
+    }).setOrigin(0.5).setDepth(BASE_DEPTH + 1);
+
+    // 價格信息
+    this.sellConfirmDialog.price = this.scene.add.text(dialogX, dialogY + 10, `獲得金幣: $${sellPrice}`, {
+      fontSize: '12px',
+      color: '#32CD32',
+      padding: { x: 6, y: 3 }
+    }).setOrigin(0.5).setDepth(BASE_DEPTH + 1);
+
+    // 確認按鈕
+    const confirmY = dialogY + 35;
+    this.sellConfirmDialog.confirmButton = this.scene.add.rectangle(dialogX - 50, confirmY, 80, 25, 0x32CD32)
+      .setStrokeStyle(2, 0x000000)
+      .setInteractive({ useHandCursor: true })
+      .setDepth(BASE_DEPTH + 2);
+    this.sellConfirmDialog.confirmText = this.scene.add.text(dialogX - 50, confirmY, '✅ 確認', {
+      fontSize: '12px',
+      color: '#FFFFFF',
+      fontStyle: 'bold'
+    }).setOrigin(0.5).setDepth(BASE_DEPTH + 3);
+
+    // 取消按鈕
+    this.sellConfirmDialog.cancelButton = this.scene.add.rectangle(dialogX + 50, confirmY, 80, 25, 0xE74C3C)
+      .setStrokeStyle(2, 0x000000)
+      .setInteractive({ useHandCursor: true })
+      .setDepth(BASE_DEPTH + 2);
+    this.sellConfirmDialog.cancelText = this.scene.add.text(dialogX + 50, confirmY, '❌ 取消', {
+      fontSize: '12px',
+      color: '#FFFFFF',
+      fontStyle: 'bold'
+    }).setOrigin(0.5).setDepth(BASE_DEPTH + 3);
+
+    // 按鈕事件
+    this.sellConfirmDialog.confirmButton.on('pointerdown', (p) => {
+      p.event.stopPropagation();
+      this.hideSellConfirmDialog();
+      this.sellTower(tower);
+    });
+    this.sellConfirmDialog.confirmButton.on('pointerover', () => {
+      if (this.sellConfirmDialog) {
+        this.sellConfirmDialog.confirmButton.setFillStyle(0x228B22);
+      }
+    });
+    this.sellConfirmDialog.confirmButton.on('pointerout', () => {
+      if (this.sellConfirmDialog) {
+        this.sellConfirmDialog.confirmButton.setFillStyle(0x32CD32);
+      }
+    });
+
+    this.sellConfirmDialog.cancelButton.on('pointerdown', (p) => {
+      p.event.stopPropagation();
+      this.hideSellConfirmDialog();
+      this.showUpgradePanel(tower); // 重新顯示升級面板
+    });
+    this.sellConfirmDialog.cancelButton.on('pointerover', () => {
+      if (this.sellConfirmDialog) {
+        this.sellConfirmDialog.cancelButton.setFillStyle(0xC0392B);
+      }
+    });
+    this.sellConfirmDialog.cancelButton.on('pointerout', () => {
+      if (this.sellConfirmDialog) {
+        this.sellConfirmDialog.cancelButton.setFillStyle(0xE74C3C);
+      }
+    });
+  }
+
+  /**
+   * 隱藏販售確認對話框
+   */
+  hideSellConfirmDialog() {
+    if (this.sellConfirmDialog) {
+      Object.values(this.sellConfirmDialog).forEach(obj => {
+        if (obj && obj.destroy) {
+          if (obj.removeAllListeners) obj.removeAllListeners();
+          obj.destroy();
+        }
+      });
+      this.sellConfirmDialog = null;
+    }
+  }
+
+  /**
+   * 販售塔
+   */
+  sellTower(tower) {
+    if (!tower || !tower.sprite || !tower.sprite.active) return;
+
+    // 計算販售價格（總投資的70%）
+    const sellPrice = Math.floor(tower.totalInvestment * 0.7);
+
+    // 從塔列表中移除
+    this.scene.playerTowers = this.scene.playerTowers.filter(t => t !== tower);
+    this.scene.towers = this.scene.towers.filter(t => t !== tower);
+
+    // 多人模式：廣播移除事件
+    if (this.scene.gameMode === 'multiplayer' && tower.networkId && SocketService.socket && this.scene.roomId) {
+      SocketService.emit('remove-tower', {
+        roomId: this.scene.roomId,
+        towerId: tower.networkId
+      });
+      
+      // 從網絡ID映射中移除
+      this.scene.towerById.delete(tower.networkId);
+    }
+
+    // 給予金幣
+    this.scene.economyManager.addGold(sellPrice);
+
+    // 顯示販售訊息
+    this.showMessage(`💰 販售 ${tower.config.emoji} 獲得 $${sellPrice}`, 0x32CD32);
+
+    // 創建販售特效
+    this.scene.effectManager.createBuildEffect(tower.x, tower.y, 0x32CD32);
+
+    // 隱藏升級面板
+    this.hideUpgradePanel();
+    this.selectedTowerObject = null;
+
+    // 銷毀塔
+    tower.destroy();
+  }
+
+  /**
    * 顯示塔信息
    */
   showTowerInfo(tower) {
@@ -374,7 +536,7 @@ export default class TowerManager {
     const panelX = tower.x;
     const panelY = tower.y - 80;
     const panelWidth = 160;
-    const panelHeight = 130;
+    const panelHeight = 200;
     const BASE_DEPTH = 200;
 
     this.upgradePanel = {};
@@ -452,13 +614,41 @@ export default class TowerManager {
       });
     }
 
-    // 關閉按鈕
-    const closeY = panelY + 55;
-    this.upgradePanel.closeButton = this.scene.add.rectangle(panelX, closeY, 60, 25, 0xE74C3C)
+    // 販售按鈕
+    const sellPrice = Math.floor(tower.totalInvestment * 0.7);
+    const sellY = panelY + 65;
+    this.upgradePanel.sellButton = this.scene.add.rectangle(panelX - 35, sellY, 60, 25, 0xFF6347)
       .setStrokeStyle(2, 0x000000)
       .setInteractive({ useHandCursor: true })
       .setDepth(BASE_DEPTH + 4);
-    this.upgradePanel.closeText = this.scene.add.text(panelX, closeY, '❌ 關閉', {
+    this.upgradePanel.sellText = this.scene.add.text(panelX - 35, sellY, `💰 $${sellPrice}`, {
+      fontSize: '10px',
+      color: '#FFFFFF',
+      fontStyle: 'bold'
+    }).setOrigin(0.5).setDepth(BASE_DEPTH + 5);
+
+    this.upgradePanel.sellButton.on('pointerdown', (p) => {
+      p.event.stopPropagation();
+      this.showSellConfirmDialog(tower);
+    });
+    this.upgradePanel.sellButton.on('pointerover', () => {
+      if (this.upgradePanel) {
+        this.upgradePanel.sellButton.setFillStyle(0xFF4500);
+      }
+    });
+    this.upgradePanel.sellButton.on('pointerout', () => {
+      if (this.upgradePanel) {
+        this.upgradePanel.sellButton.setFillStyle(0xFF6347);
+      }
+    });
+
+    // 關閉按鈕
+    const closeY = panelY + 65;
+    this.upgradePanel.closeButton = this.scene.add.rectangle(panelX + 35, closeY, 60, 25, 0xE74C3C)
+      .setStrokeStyle(2, 0x000000)
+      .setInteractive({ useHandCursor: true })
+      .setDepth(BASE_DEPTH + 4);
+    this.upgradePanel.closeText = this.scene.add.text(panelX + 35, closeY, '❌ 關閉', {
       fontSize: '11px',
       color: '#FFFFFF',
       fontStyle: 'bold'
@@ -817,6 +1007,7 @@ export default class TowerManager {
    */
   cleanup() {
     this.hideUpgradePanel();
+    this.hideSellConfirmDialog();
     this.hideTooltip();
     this.clearCraftSelection();
 

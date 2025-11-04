@@ -25,7 +25,7 @@ export default class GameScene extends Phaser.Scene {
     this.gameMode = data.mode || 'singlePlayer';
     this.playerNumber = null;
     this.roomId = null;
-    this.gold = 500;
+    this.gold = 5000;
     this.lives = 20;
     this.wave = 0;
     this.score = 0;
@@ -499,17 +499,38 @@ export default class GameScene extends Phaser.Scene {
   createGhostEnemy({ enemyId, wave = 1, isBoss = false, emoji = null }) {
     if (!this.opponentPath || this.opponentPath.length === 0) return null;
     const startPoint = this.opponentPath[0];
-    const fontSize = isBoss ? '96px' : '28px';
-    const chosenEmoji = emoji || (isBoss ? '🐲' : '👾');
+    
+    // 根據波數和是否為BOSS調整體型
+    let fontSize, healthWidth, offsetY;
+    if (isBoss) {
+      if (wave > 100) {
+        fontSize = '192px'; // 101波之後BOSS雙倍體型 (原96px的雙倍)
+        healthWidth = 320;
+        offsetY = 140;
+      } else {
+        fontSize = '96px';
+        healthWidth = 160;
+        offsetY = 70;
+      }
+    } else {
+      if (wave > 100) {
+        fontSize = '56px'; // 101波之後普通怪物雙倍體型 (原28px的雙倍)
+        healthWidth = 80;
+        offsetY = 40;
+      } else {
+        fontSize = '28px';
+        healthWidth = 40;
+        offsetY = 20;
+      }
+    }
+    
+    const chosenEmoji = emoji || (isBoss ? '🤡' : '🤡');
     const sprite = this.add.text(startPoint.x, startPoint.y, chosenEmoji, {
       fontSize,
       color: '#FFFFFF'
     }).setOrigin(0.5);
     sprite.setDepth(52);
     sprite.setAlpha(0.6);
-
-    const healthWidth = isBoss ? 160 : 40;
-    const offsetY = isBoss ? 70 : 20;
     const healthBarLeftX = startPoint.x - (healthWidth / 2);
     const healthBarBg = this.add.rectangle(healthBarLeftX, startPoint.y - offsetY, healthWidth, 6, 0x000000);
     const healthBar = this.add.rectangle(healthBarLeftX, startPoint.y - offsetY, healthWidth, 6, 0xFF6B6B);
@@ -666,9 +687,7 @@ export default class GameScene extends Phaser.Scene {
     if (enemy.reward) {
       const goldBonus = this.calculateGoldBonus(enemy);
       const finalGold = Math.round(enemy.reward * (1 + goldBonus));
-      if (this.addGold) {
-        this.economyManager.addGold(finalGold);
-      }
+      this.economyManager.addGold(finalGold);
     }
 
     if (this.gameMode === 'multiplayer' && !this.matchEnded && enemy.owner !== 'opponent' && enemy.enemyId && SocketService.socket && this.roomId) {
@@ -696,15 +715,15 @@ export default class GameScene extends Phaser.Scene {
       totalBonus += (killerTower.config.goldMultiplier - 1); // 例如 1.5 變成 +0.5 (50%)
     }
 
-    // 金錢塔光環範圍加成
+    // 金錢塔光環範圍加成（金錢塔增益範圍內的其他塔）
     if (killerTower) {
-      this.playerTowers.forEach(tower => {
-        if (tower.config.goldAuraRange && tower.config.goldAuraBonus) {
+      this.playerTowers.forEach(moneyTower => {
+        if (moneyTower.config.goldAuraRange && moneyTower.config.goldAuraBonus) {
           const distance = Phaser.Math.Distance.Between(
-            killerTower.x, killerTower.y, tower.x, tower.y
+            killerTower.x, killerTower.y, moneyTower.x, moneyTower.y
           );
-          if (distance <= tower.config.goldAuraRange) {
-            totalBonus += tower.config.goldAuraBonus;
+          if (distance <= moneyTower.config.goldAuraRange) {
+            totalBonus += moneyTower.config.goldAuraBonus;
           }
         }
       });
@@ -1181,6 +1200,11 @@ export default class GameScene extends Phaser.Scene {
     // 更新範圍持續效果（例如地面火焰）
     if (this.effectManager && this.effectManager.updateGroundFires) {
       this.effectManager.updateGroundFires(delta, this.enemies);
+    }
+
+    // 更新陷阱系統
+    if (this.effectManager && this.effectManager.updateTraps) {
+      this.effectManager.updateTraps(delta, this.enemies);
     }
 
     // 更新投射物

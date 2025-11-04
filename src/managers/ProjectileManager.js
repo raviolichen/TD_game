@@ -57,6 +57,13 @@ export default class ProjectileManager {
       this.showPercentDamageText(target.x, target.y, percentDmg);
     }
 
+    // 蒸汽工廠全地圖真傷加成
+    const globalTrueDamage = this.calculateGlobalTrueDamage(target);
+    if (globalTrueDamage > 0) {
+      target.takeDamage(globalTrueDamage);
+      this.showPercentDamageText(target.x, target.y - 15, globalTrueDamage);
+    }
+
     if (config.dotDamage) target.applyBurn(config.dotDamage, config.dotDuration);
     if (config.poisonDamage) target.applyPoison(config.poisonDamage, config.poisonDuration);
     if (config.slow) target.applySlow(config.slow, config.slowDuration);
@@ -86,9 +93,12 @@ export default class ProjectileManager {
       );
     }
 
-    // 地面火焰區域
+    // 地面火焰區域（機率觸發）
     if (config.groundFireDamage && config.groundFireDuration) {
-      this.effectManager.createGroundFire(projectile.x, projectile.y, config, projectile.sourceTower);
+      const chance = config.groundFireChance || 1.0; // 預設100%，如果沒設定機率
+      if (Math.random() < chance) {
+        this.effectManager.createGroundFire(projectile.x, projectile.y, config, projectile.sourceTower);
+      }
     }
 
     this.effectManager.createHitEffect(projectile.x, projectile.y, config.effectColor);
@@ -142,5 +152,25 @@ export default class ProjectileManager {
       if (projectile.glow) projectile.glow.destroy();
     });
     this.projectiles = [];
+  }
+
+  /**
+   * 計算蒸汽工廠的全地圖真傷加成
+   */
+  calculateGlobalTrueDamage(target) {
+    let totalTrueDamage = 0;
+    
+    // 檢查所有玩家塔，找出蒸汽工廠
+    if (this.scene.playerTowers) {
+      this.scene.playerTowers.forEach(tower => {
+        if (tower.config.truePercentDamage) {
+          // 每等級增加3%最大血量真傷
+          const trueDamagePercent = tower.config.truePercentDamage * tower.level;
+          totalTrueDamage += target.maxHealth * trueDamagePercent;
+        }
+      });
+    }
+    
+    return totalTrueDamage;
   }
 }

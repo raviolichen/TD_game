@@ -160,7 +160,7 @@ export const TowerConfig = {
     description: '閃電鏈擊3個目標',
     color: 0xFFFF00,
     effectColor: 0xFFFFFF,
-    recipe: [TowerTypes.MAGIC, TowerTypes.ARROW]
+    recipe: [TowerTypes.MAGIC, TowerTypes.MAGIC]
   },
 
   [TowerTypes.POISON]: {
@@ -193,7 +193,7 @@ export const TowerConfig = {
     description: '超遠射程精準狙擊',
     color: 0x2F4F4F,
     effectColor: 0xFF0000,
-    recipe: [TowerTypes.ARROW, TowerTypes.MAGIC]
+    recipe: [TowerTypes.MAGIC, TowerTypes.ARROW]
   },
 
   [TowerTypes.TRAP]: {
@@ -296,14 +296,15 @@ export const TowerConfig = {
     tier: 3,
     cost: 620,
     damage: 45,
-    groundFireDamage: 20,
-    groundFireDuration: 6000,
-    groundFireRadius: 100,
+    groundFireDamage: 30,
+    groundFireDuration: 4000,
+    groundFireRadius: 80,
+    groundFireChance: 0.3, // 30%機率留下火焰區域
     maxGroundFires: 3,
     range: 180,
     fireRate: 2000,
     projectileSpeed: 350,
-    description: '地面持續火焰區域',
+    description: '30%機率留下地面火焰區域',
     color: 0xFF4500,
     effectColor: 0xFFD700,
     recipe: [TowerTypes.ROCKET, TowerTypes.POISON]
