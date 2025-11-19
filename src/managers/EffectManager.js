@@ -55,9 +55,9 @@ export default class EffectManager {
       radius,
       damage,
       damageInterval: 500, // 每0.5秒造成一次傷害
-      lastDamageTime: Date.now(),
+      damageTimer: 0,
       duration,
-      createdAt: Date.now(),
+      elapsed: 0,
       circle: fireCircle,
       emoji: fireEmoji,
       particles: fireParticles,
@@ -68,19 +68,18 @@ export default class EffectManager {
   }
 
   updateGroundFires(delta, enemies) {
-    const currentTime = Date.now();
-
     this.groundFires = this.groundFires.filter(fire => {
-      const elapsed = currentTime - fire.createdAt;
+      fire.elapsed += delta;
 
       // 檢查是否過期
-      if (elapsed >= fire.duration) {
+      if (fire.elapsed >= fire.duration) {
         this.removeGroundFire(fire);
         return false;
       }
 
       // 對範圍內的敵人造成傷害
-      if (currentTime - fire.lastDamageTime >= fire.damageInterval) {
+      fire.damageTimer += delta;
+      if (fire.damageTimer >= fire.damageInterval) {
         enemies.forEach(enemy => {
           if (!enemy.active) return;
           const distance = Phaser.Math.Distance.Between(fire.x, fire.y, enemy.x, enemy.y);
@@ -96,11 +95,11 @@ export default class EffectManager {
             }
           }
         });
-        fire.lastDamageTime = currentTime;
+        fire.damageTimer = 0;
       }
 
       // 更新視覺效果（脈動動畫）
-      const progress = elapsed / fire.duration;
+      const progress = fire.elapsed / fire.duration;
       fire.circle.setAlpha(0.3 * (1 - progress * 0.5));
 
       return true;
@@ -127,9 +126,9 @@ export default class EffectManager {
       const randomIndex = Phaser.Math.Between(0, path.length - 1);
       const targetPoint = path[randomIndex];
 
-      // 添加一些隨機偏移
-      const offsetX = Phaser.Math.Between(-50, 50);
-      const offsetY = Phaser.Math.Between(-50, 50);
+      // 減少隨機偏移，確保更精準地打在路徑上
+      const offsetX = Phaser.Math.Between(-20, 20);
+      const offsetY = Phaser.Math.Between(-20, 20);
       const x = targetPoint.x + offsetX;
       const y = targetPoint.y + offsetY;
 
@@ -438,11 +437,11 @@ export default class EffectManager {
   }
 
   updateTraps(delta, enemies) {
-    const currentTime = Date.now();
-
     this.traps = this.traps.filter(trap => {
+      trap.elapsed += delta;
+
       // 檢查陷阱是否過期
-      if (currentTime - trap.createdAt >= trap.duration) {
+      if (trap.elapsed >= trap.duration) {
         this.removeTrap(trap);
         return false;
       }

@@ -275,14 +275,21 @@ export default class Enemy {
       currentSpeed *= (1 - this.effects.slowed.amount);
     }
 
+    // delta 已經受到 time.timeScale 影響，所以移動速度會自動加速
     const moveDistance = currentSpeed * (delta / 1000);
-    this.x += Math.cos(angle) * moveDistance;
-    this.y += Math.sin(angle) * moveDistance;
-
-    // 檢查是否到達路徑點
-    const distance = Phaser.Math.Distance.Between(this.x, this.y, target.x, target.y);
-    if (distance < 5) {
+    
+    // 計算到目標點的距離
+    const distanceToTarget = Phaser.Math.Distance.Between(this.x, this.y, target.x, target.y);
+    
+    // 如果移動距離大於到目標的距離，直接移動到目標點
+    if (moveDistance >= distanceToTarget) {
+      this.x = target.x;
+      this.y = target.y;
       this.pathIndex++;
+    } else {
+      // 正常移動
+      this.x += Math.cos(angle) * moveDistance;
+      this.y += Math.sin(angle) * moveDistance;
     }
   }
 

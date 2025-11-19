@@ -101,15 +101,15 @@ export default class Tower {
     }
   }
 
-  update(time, enemies, auraBonus = null) {
-    // 光環塔不攻擊
-    if (this.config.isAura) {
+  update(time, enemies, auraBonus = null, delta = 16) {
+    // 純光環塔不攻擊（光環塔不攻擊，但蒸汽工廠例外）
+    if (this.config.isAura && this.type !== 'steamFactory') {
       return;
     }
 
     // 檢查是否被Boss凍結
     if (this.freezeDuration && this.freezeDuration > 0) {
-      this.freezeDuration -= 16; // 假設60fps，每幀約16ms
+      this.freezeDuration = Math.max(0, this.freezeDuration - delta);
       return; // 被凍結時不攻擊
     }
 
@@ -149,6 +149,7 @@ export default class Tower {
     }
 
     // 計算實際攻速（應用光環加成）
+    // GameScene 會傳入已套用加速倍率的時間，所以不用另外處理 timeScale
     let actualFireRate = this.config.fireRate;
     if (auraBonus && auraBonus.attackSpeedBonus > 0) {
       // 攻速提升 = 減少攻擊間隔
@@ -426,7 +427,7 @@ export default class Tower {
       circle: trapCircle,
       emoji: trapEmoji,
       triggered: false,
-      createdAt: Date.now(),
+      elapsed: 0,
       duration: this.config.trapDuration,
       sourceTower: this
     };

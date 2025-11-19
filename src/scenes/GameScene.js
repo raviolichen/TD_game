@@ -74,6 +74,7 @@ export default class GameScene extends Phaser.Scene {
     this.stateSyncInterval = null;
     this.lastStateBroadcastHadEnemies = false;
     this.enemyIncreasePerTenWaves = {}; // 記錄每10波增加的怪物數量
+    this.scaledGameTime = 0;
   }
 
   preload() {
@@ -88,6 +89,12 @@ export default class GameScene extends Phaser.Scene {
   // #region Scene Create
   create(data) {
     this.cameras.main.setBackgroundColor('#A8D54F');
+
+    // 初始化遊戲速度設置 (確保正常速度)
+    this.physics.world.timeScale = 1;
+    this.time.timeScale = 1;
+    this.gameSpeedMultiplier = 1;
+    this.scaledGameTime = 0;
 
     // 初始化所有管理器
     this.effectManager = new EffectManager(this);
@@ -106,6 +113,15 @@ export default class GameScene extends Phaser.Scene {
 
     this.input.on('pointerdown', (pointer) => this.handleMapClick(pointer));
     this.input.on('pointermove', (pointer) => this.towerManager.handleMouseMove(pointer));
+    
+    // 添加鍵盤快捷鍵 (只在單機模式下)
+    if (this.gameMode === 'singlePlayer') {
+      this.input.keyboard.on('keydown-SPACE', () => {
+        if (this.uiManager && this.uiManager.toggleGameSpeed) {
+          this.uiManager.toggleGameSpeed();
+        }
+      });
+    }
 
     this.events.once('shutdown', this.onSceneShutdown, this);
     this.events.once('destroy', this.onSceneShutdown, this);
@@ -843,6 +859,12 @@ export default class GameScene extends Phaser.Scene {
   }
 
   onSceneShutdown() {
+    // 重置遊戲速度到正常
+    this.physics.world.timeScale = 1;
+    this.time.timeScale = 1;
+    this.gameSpeedMultiplier = 1;
+    this.scaledGameTime = 0;
+    
     if (this.waveTimerEvent) {
       this.waveTimerEvent.remove(false);
       this.waveTimerEvent = null;
@@ -1175,13 +1197,20 @@ export default class GameScene extends Phaser.Scene {
   update(time, delta) {
     if (this.isGameOver || this.matchEnded) return;
 
+    const speedMultiplier = this.gameMode === 'multiplayer'
+      ? 1
+      : (this.gameSpeedMultiplier || 1);
+    const scaledDelta = delta * speedMultiplier;
+    this.scaledGameTime = (this.scaledGameTime || 0) + scaledDelta;
+    const scaledTime = this.scaledGameTime;
+
     const auraBonus = this.waveManager ? this.waveManager.getAuraBonus() : null;
 
     // 更新所有玩家塔
     if (this.playerTowers && this.playerTowers.length > 0) {
       this.playerTowers.forEach(tower => {
         if (tower && tower.update) {
-          tower.update(time, this.enemies, auraBonus);
+          tower.update(scaledTime, this.enemies, auraBonus, scaledDelta);
         }
       });
     }
@@ -1191,7 +1220,7 @@ export default class GameScene extends Phaser.Scene {
       this.enemies = this.enemies.filter(enemy => {
         if (!enemy) return false;
         if (enemy.update) {
-          enemy.update(delta, auraBonus);
+          enemy.update(scaledDelta, auraBonus);
         }
         return enemy.active;
       });
@@ -1199,22 +1228,22 @@ export default class GameScene extends Phaser.Scene {
 
     // 更新範圍持續效果（例如地面火焰）
     if (this.effectManager && this.effectManager.updateGroundFires) {
-      this.effectManager.updateGroundFires(delta, this.enemies);
+      this.effectManager.updateGroundFires(scaledDelta, this.enemies);
     }
 
     // 更新陷阱系統
     if (this.effectManager && this.effectManager.updateTraps) {
-      this.effectManager.updateTraps(delta, this.enemies);
+      this.effectManager.updateTraps(scaledDelta, this.enemies);
     }
 
     // 更新投射物
     if (this.projectileManager && this.projectileManager.update) {
-      this.projectileManager.update(delta, this.enemies);
+      this.projectileManager.update(scaledDelta, this.enemies);
     }
 
     // 多人模式同步幽靈敵人
     if (this.gameMode === 'multiplayer') {
-      this.updateGhostEnemies(delta);
+      this.updateGhostEnemies(scaledDelta);
     }
   }
 

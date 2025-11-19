@@ -396,10 +396,11 @@ export const TowerConfig = {
     projectileSpeed: 550,
     knockback: 80,
     splashRadius: 110,
+    knockbackSplash: true, // 範圍蒸汽擊退
     isAura: true,
     goldBonus: 0.10, // 每等級+10%金幣
-    truePercentDamage: 0.03, // 每等級+3%最大血量真傷
-    description: '全地圖：金幣+10%/等 真傷+3%/等 蒸汽擊退',
+    truePercentDamage: 0.005, // 每等級+0.5%最大血量真傷 (從3%改為0.5%)
+    description: '全地圖：金幣+10%/等 真傷+0.5%/等 蒸汽擊退',
     color: 0xCD7F32,
     effectColor: 0xC0C0C0,
     recipe: [TowerTypes.MONEY, TowerTypes.STEAM_CANNON, TowerTypes.ARMOR_BREAKER]
@@ -410,14 +411,14 @@ export const TowerConfig = {
     emoji: '☄️',
     tier: 4,
     cost: 2800,
-    damage: 80,
+    damage: 240, // 提升到3倍 (80 * 3)
     range: 0, // 全地圖攻擊
     fireRate: 3000,
     projectileSpeed: 800,
     meteorCountMin: 3,
     meteorCountMax: 5,
     meteorSplashRadius: 80,
-    groundFireDamage: 15,
+    groundFireDamage: 45, // 同樣提升到3倍 (15 * 3)
     groundFireDuration: 7000,
     groundFireRadius: 90,
     maxGroundFires: 10,

@@ -16,6 +16,11 @@ export default class UIManager {
     this.hintText = null;
     this.opponentLivesText = null;
     this.matchStatusText = null;
+    
+    // 遊戲速度控制
+    this.gameSpeed = 1; // 預設1倍速
+    this.speedButton = null;
+    this.speedText = null;
   }
 
   /**
@@ -149,7 +154,7 @@ export default class UIManager {
     });
 
     // 提示文字
-    const hintY = 555;
+    const hintY = craftY + 70;
     const hintBg = this.scene.add.rectangle(panelX, hintY, panelWidth, 60, 0xE8F5E9, 1);
     hintBg.setStrokeStyle(2, 0x4CAF50);
     hintBg.setDepth(100);
@@ -163,6 +168,11 @@ export default class UIManager {
       padding: { x: 2, y: 2 }
     }).setOrigin(0.5);
     this.hintText.setDepth(102);
+
+    // 右上角速度控制按鈕 (只在單機模式下顯示)
+    if (this.scene.gameMode === 'singlePlayer') {
+      this.createSpeedControl();
+    }
   }
 
   /**
@@ -477,6 +487,115 @@ export default class UIManager {
   }
 
   /**
+   * 創建右上角速度控制
+   */
+  createSpeedControl() {
+    // 右上角位置計算
+    const buttonWidth = 120;
+    const buttonHeight = 35;
+    const margin = 20;
+    const buttonX = this.scene.cameras.main.width - margin - (buttonWidth / 2);
+    const buttonY = margin + (buttonHeight / 2);
+
+    // 速度控制按鈕
+    this.speedButton = this.scene.add.rectangle(buttonX, buttonY, buttonWidth, buttonHeight, 0x27AE60)
+      .setStrokeStyle(2, 0x000000)
+      .setInteractive({ useHandCursor: true });
+    this.speedButton.setDepth(150); // 較高深度確保在最上層
+
+    this.speedText = this.scene.add.text(buttonX, buttonY, '⚡ 速度: 1x', {
+      fontSize: '14px',
+      color: '#FFFFFF',
+      fontStyle: 'bold'
+    }).setOrigin(0.5);
+    this.speedText.setDepth(151);
+
+    // 添加半透明背景
+    const bgPadding = 5;
+    this.speedBg = this.scene.add.rectangle(
+      buttonX, buttonY, 
+      buttonWidth + bgPadding * 2, 
+      buttonHeight + bgPadding * 2, 
+      0x000000, 0.3
+    );
+    this.speedBg.setDepth(149);
+
+    // 按鈕事件
+    this.speedButton.on('pointerdown', () => this.toggleGameSpeed());
+    this.speedButton.on('pointerover', () => {
+      this.speedButton.setFillStyle(0x2ECC71);
+      this.speedButton.setScale(1.05);
+      this.speedText.setScale(1.05);
+    });
+    this.speedButton.on('pointerout', () => {
+      this.speedButton.setFillStyle(this.getSpeedButtonColor());
+      this.speedButton.setScale(1);
+      this.speedText.setScale(1);
+    });
+  }
+
+  /**
+   * 獲取當前速度對應的按鈕顏色
+   */
+  getSpeedButtonColor() {
+    switch (this.gameSpeed) {
+      case 1: return 0x27AE60; // 綠色 - 正常速度
+      case 2: return 0xF39C12; // 橙色 - 2倍速
+      case 4: return 0xE74C3C; // 紅色 - 4倍速
+      default: return 0x27AE60;
+    }
+  }
+
+  /**
+   * 切換遊戲速度 (1x -> 2x -> 4x -> 1x)
+   */
+  toggleGameSpeed() {
+    // 只在單機模式下允許調整速度
+    if (this.scene.gameMode !== 'singlePlayer') return;
+
+    switch (this.gameSpeed) {
+      case 1:
+        this.gameSpeed = 2;
+        break;
+      case 2:
+        this.gameSpeed = 4;
+        break;
+      case 4:
+        this.gameSpeed = 1;
+        break;
+      default:
+        this.gameSpeed = 1;
+    }
+
+    // 更新UI文字
+    if (this.speedText) {
+      this.speedText.setText(`⚡ 速度: ${this.gameSpeed}x`);
+    }
+
+    // 更新按鈕顏色以反映當前速度
+    if (this.speedButton) {
+      this.speedButton.setFillStyle(this.getSpeedButtonColor());
+    }
+
+    // 應用速度到遊戲引擎 - Phaser 會自動處理依賴 timeScale 的系統
+    this.scene.physics.world.timeScale = this.gameSpeed;
+    this.scene.time.timeScale = this.gameSpeed;
+    this.scene.gameSpeedMultiplier = this.gameSpeed;
+
+    // 重置所有塔的攻擊計時，避免時間縮放衝突
+    if (this.scene.playerTowers) {
+      this.scene.playerTowers.forEach(tower => {
+        if (tower) {
+          tower.lastFired = 0; // 重置攻擊計時，讓塔能立即適應新的時間縮放
+        }
+      });
+    }
+
+    // 顯示速度變更提示
+    this.showMessage(`⚡ 遊戲速度: ${this.gameSpeed}x`, 0x2ECC71);
+  }
+
+  /**
    * 清理資源
    */
   cleanup() {
@@ -487,5 +606,8 @@ export default class UIManager {
     this.hintText = null;
     this.opponentLivesText = null;
     this.matchStatusText = null;
+    this.speedButton = null;
+    this.speedText = null;
+    this.speedBg = null;
   }
 }
