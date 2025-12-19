@@ -9,6 +9,173 @@ export default class EffectManager {
     this.traps = [];
   }
 
+  // #region 視覺特效系統
+
+  /**
+   * 創建投射物軌跡效果
+   */
+  createProjectileTrail(x, y, type, color) {
+    if (!type) return;
+
+    switch (type) {
+      case 'rocket':
+      case 'steam':
+      case 'steamCannon':
+        // 煙霧軌跡
+        this.emitParticle(x, y, {
+          lifespan: 300,
+          scale: { start: 0.5, end: 0 },
+          alpha: { start: 0.5, end: 0 },
+          tint: 0xCCCCCC,
+          speed: 10
+        });
+        break;
+
+      case 'fire':
+      case 'solarFlare':
+      case 'meteorTower':
+        // 火焰軌跡
+        this.emitParticle(x, y, {
+          lifespan: 200,
+          scale: { start: 0.4, end: 0 },
+          alpha: { start: 0.6, end: 0 },
+          tint: 0xFF4500,
+          speed: 10,
+          blendMode: 'ADD'
+        });
+        break;
+
+      case 'ice':
+      case 'freezeCannon':
+      case 'frostFortress':
+        // 寒氣軌跡
+        this.emitParticle(x, y, {
+          lifespan: 250,
+          scale: { start: 0.4, end: 0 },
+          alpha: { start: 0.4, end: 0 },
+          tint: 0xADD8E6,
+          speed: 5
+        });
+        break;
+
+      case 'magic':
+      case 'chaosArray':
+      case 'ultimateCannon':
+      case 'auraTower':
+        // 魔法光塵
+        this.emitParticle(x, y, {
+          lifespan: 200,
+          scale: { start: 0.3, end: 0 },
+          alpha: { start: 0.5, end: 0 },
+          tint: color || 0xFF00FF,
+          speed: 5,
+          blendMode: 'ADD'
+        });
+        break;
+
+      case 'poison':
+        // 毒液滴落
+        if (Math.random() < 0.3) {
+          this.emitParticle(x, y, {
+            lifespan: 300,
+            scale: { start: 0.3, end: 0 },
+            alpha: { start: 0.6, end: 0 },
+            tint: 0x00FF00,
+            gravityY: 50
+          });
+        }
+        break;
+    }
+  }
+
+  /**
+   * 簡化版粒子發射 helper
+   */
+  emitParticle(x, y, config) {
+    const particle = this.scene.add.circle(x, y, (config.scale?.start || 0.5) * 5, config.tint || 0xFFFFFF);
+    particle.setAlpha(config.alpha?.start || 1);
+    if (config.blendMode === 'ADD') particle.setBlendMode(Phaser.BlendModes.ADD);
+
+    // 設置層級在投射物之下
+    particle.setDepth(55);
+
+    this.scene.tweens.add({
+      targets: particle,
+      alpha: config.alpha?.end || 0,
+      scale: 0,
+      x: x + (Math.random() - 0.5) * (config.speed || 0),
+      y: y + (Math.random() - 0.5) * (config.speed || 0) + (config.gravityY ? config.gravityY * (config.lifespan / 1000) : 0),
+      duration: config.lifespan || 200,
+      onComplete: () => particle.destroy()
+    });
+  }
+
+  /**
+   * 創建怪物死亡特效（可愛版）
+   */
+  createDeathEffect(x, y, color) {
+    // 1. "啵" 消失煙霧雲
+    const cloudCount = 5;
+    for (let i = 0; i < cloudCount; i++) {
+      const cloud = this.scene.add.circle(
+        x + (Math.random() - 0.5) * 20,
+        y + (Math.random() - 0.5) * 20,
+        8 + Math.random() * 8,
+        0xFFFFFF
+      );
+      cloud.setDepth(55);
+
+      this.scene.tweens.add({
+        targets: cloud,
+        scale: { from: 0, to: 1.5 },
+        alpha: { from: 1, to: 0 },
+        duration: 400 + Math.random() * 200,
+        ease: 'Back.easeOut',
+        onComplete: () => cloud.destroy()
+      });
+    }
+
+    // 2. 飛散的星星
+    const starCount = 6;
+    for (let i = 0; i < starCount; i++) {
+      const angle = (Math.PI * 2 / starCount) * i;
+      const dist = 30;
+      const star = this.scene.add.text(x, y, '⭐', { fontSize: '12px' }).setOrigin(0.5);
+      star.setDepth(56);
+
+      this.scene.tweens.add({
+        targets: star,
+        x: x + Math.cos(angle) * dist,
+        y: y + Math.sin(angle) * dist,
+        rotation: Math.PI * 2,
+        scale: 0,
+        duration: 500,
+        ease: 'Cubic.easeOut',
+        onComplete: () => star.destroy()
+      });
+    }
+
+    // 3. 蹦出的文字 (POP!)
+    const popText = this.scene.add.text(x, y - 20, 'POP!', {
+      fontSize: '16px',
+      color: '#FFD700',
+      fontStyle: 'bold',
+      stroke: '#FFFFFF',
+      strokeThickness: 3
+    }).setOrigin(0.5);
+    popText.setDepth(60);
+
+    this.scene.tweens.add({
+      targets: popText,
+      y: y - 50,
+      scale: 1.5,
+      alpha: 0,
+      duration: 600,
+      ease: 'Back.easeOut',
+      onComplete: () => popText.destroy()
+    });
+  }
+
   // #region 地面火焰系統
 
   createGroundFire(x, y, config, sourceTower) {
@@ -86,7 +253,7 @@ export default class EffectManager {
           if (distance <= fire.radius) {
             enemy.takeDamage(fire.damage);
             enemy.createBurnParticles(); // 顯示燃燒特效
-            
+
             // 蒸汽工廠全地圖真傷加成（地面火焰也適用）
             const globalTrueDamage = this.calculateGlobalTrueDamage(enemy);
             if (globalTrueDamage > 0) {
@@ -189,7 +356,7 @@ export default class EffectManager {
             if (sourceTower) {
               enemy.lastHitByTower = sourceTower;
             }
-            
+
             // 蒸汽工廠全地圖真傷加成（隕石傷害也適用）
             const globalTrueDamage = this.calculateGlobalTrueDamage(enemy);
             if (globalTrueDamage > 0) {
@@ -255,7 +422,7 @@ export default class EffectManager {
     // 計算沿路徑的後退方向
     const currentPathIndex = enemy.pathIndex || 0;
     const previousPathIndex = Math.max(0, currentPathIndex - 1);
-    
+
     let retreatAngle;
     if (currentPathIndex > 0 && enemy.path[previousPathIndex]) {
       // 沿路徑後退
@@ -463,7 +630,7 @@ export default class EffectManager {
 
   triggerTrap(trap, enemy) {
     if (trap.triggered) return;
-    
+
     trap.triggered = true;
 
     // 根據陷阱類型施加效果
@@ -478,7 +645,7 @@ export default class EffectManager {
             if (trap.sourceTower) {
               e.lastHitByTower = trap.sourceTower;
             }
-            
+
             // 蒸汽工廠全地圖真傷加成（陷阱傷害也適用）
             const globalTrueDamage = this.calculateGlobalTrueDamage(e);
             if (globalTrueDamage > 0) {
@@ -578,7 +745,7 @@ export default class EffectManager {
    */
   calculateGlobalTrueDamage(target) {
     let totalTrueDamage = 0;
-    
+
     // 檢查所有玩家塔，找出蒸汽工廠
     if (this.scene.playerTowers) {
       this.scene.playerTowers.forEach(tower => {
@@ -589,7 +756,7 @@ export default class EffectManager {
         }
       });
     }
-    
+
     return totalTrueDamage;
   }
 

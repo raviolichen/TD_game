@@ -15,10 +15,10 @@ export default class Tower {
     this.networkId = null;
     this.owner = 'self';
     this.isRemote = false;
-    
+
     // 追蹤總投資成本（建造+升級）
     this.totalInvestment = this.config.cost;
-    
+
     // 陷阱塔專用屬性
     if (this.config.maxTraps) {
       this.activeTrapCount = 0;
@@ -43,7 +43,7 @@ export default class Tower {
     // 等級指示器（徽章背景）
     this.tierBadge = this.scene.add.circle(this.x + 15, this.y - 15, 10,
       this.config.tier === 1 ? 0x808080 :
-      this.config.tier === 2 ? 0x4169E1 : 0xFFD700
+        this.config.tier === 2 ? 0x4169E1 : 0xFFD700
     );
     this.tierBadge.setStrokeStyle(2, 0x000000);
     this.tierBadge.setDepth(21);
@@ -220,6 +220,11 @@ export default class Tower {
 
     // 播放射擊動畫
     this.playFireAnimation();
+
+    // 播放攻擊音效
+    if (this.scene.audioManager) {
+      this.scene.audioManager.playShootSound(this.type);
+    }
   }
 
   createProjectile(target, auraBonus = null) {
@@ -292,11 +297,11 @@ export default class Tower {
     // 計算升級成本並添加到總投資
     const upgradeCost = Math.floor(this.config.cost * 0.6);
     this.totalInvestment += upgradeCost;
-    
+
     this.level++;
     this.config.damage *= 1.2;
     this.config.range *= 1.05; // 降低範圍增長率從1.1到1.05，避免後期過於強大
-    
+
     // 地面火焰傷害也隨升級提升
     if (this.config.groundFireDamage) {
       this.config.groundFireDamage *= 1.2;
@@ -381,10 +386,10 @@ export default class Tower {
 
     // 隨機選擇一個位置
     const trapPosition = Phaser.Math.RND.pick(validPositions);
-    
+
     // 創建陷阱
     this.createTrap(trapPosition.x, trapPosition.y);
-    
+
     // 播放放置動畫
     this.playFireAnimation();
   }
@@ -397,19 +402,19 @@ export default class Tower {
       { emoji: '☠️', effect: 'poison', color: 0x32CD32 },      // 毒性陷阱
       { emoji: '⚡', effect: 'stun', color: 0xFFFF00 }         // 電擊陷阱
     ];
-    
+
     const trapType = Phaser.Math.RND.pick(trapTypes);
-    
+
     // 創建陷阱視覺
     const trapCircle = this.scene.add.circle(x, y, 15, trapType.color, 0.3);
     trapCircle.setStrokeStyle(2, trapType.color, 0.8);
     trapCircle.setDepth(10);
-    
+
     const trapEmoji = this.scene.add.text(x, y, trapType.emoji, {
       fontSize: '20px'
     }).setOrigin(0.5);
     trapEmoji.setDepth(11);
-    
+
     // 脈動動畫
     this.scene.tweens.add({
       targets: [trapCircle, trapEmoji],

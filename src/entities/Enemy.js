@@ -8,7 +8,7 @@ function getWaveMonsterEmoji(waveNumber) {
   if (waveNumber > 100) {
     return '🤡'; // 固定圖案，後續會有雙倍體型
   }
-  
+
   const monstersByWave = [
     // 第1-10波：昆蟲軍團
     '🐛', '🐝', '🐜', '🪲', '🦗', '🐞', '🕷️', '🦂', '🪰', '🦟',
@@ -31,7 +31,7 @@ function getWaveMonsterEmoji(waveNumber) {
     // 第91-100波：超自然存在
     '👽', '🛸', '🌌', '🔮', '🎭', '🗯️', '💭', '🌀', '♠️', '🃏'
   ];
-  
+
   return monstersByWave[waveNumber - 1] || '👾';
 }
 
@@ -40,7 +40,7 @@ function getWaveBossEmoji(waveNumber) {
   if (waveNumber > 100) {
     return '🤡'; // 固定BOSS圖案，後續會有雙倍體型
   }
-  
+
   // 每10波一個BOSS，共10種BOSS
   const bossEmojis = [
     '🕷️', // 第10波：蟲王
@@ -54,7 +54,7 @@ function getWaveBossEmoji(waveNumber) {
     '🌳', // 第90波：森林王
     '👽'  // 第100波：外星霸主
   ];
-  
+
   const bossIndex = Math.floor(waveNumber / 10) - 1;
   return bossEmojis[bossIndex] || '🐲';
 }
@@ -134,7 +134,7 @@ export default class Enemy {
     if (this.isBoss) {
       // BOSS使用波數專屬圖案
       emoji = getWaveBossEmoji(this.waveNumber);
-      
+
       // 101波之後BOSS雙倍體型
       if (this.waveNumber > 100) {
         fontSize = '224px'; // 28px * 8 (雙倍於原本的4倍)
@@ -148,7 +148,7 @@ export default class Enemy {
     } else {
       // 普通怪物使用波數專屬圖案
       emoji = getWaveMonsterEmoji(this.waveNumber);
-      
+
       // 101波之後普通怪物雙倍體型
       if (this.waveNumber > 100) {
         fontSize = '56px'; // 28px * 2 (雙倍體型)
@@ -189,7 +189,7 @@ export default class Enemy {
     // 如果有技能，顯示技能圖標
     if (this.bossAbilities.length > 0) {
       let iconOffsetX, iconOffsetY, iconFontSize;
-      
+
       if (this.isBoss) {
         if (this.waveNumber > 100) {
           iconOffsetX = 120; // 雙倍距離
@@ -277,10 +277,10 @@ export default class Enemy {
 
     // delta 已經受到 time.timeScale 影響，所以移動速度會自動加速
     const moveDistance = currentSpeed * (delta / 1000);
-    
+
     // 計算到目標點的距離
     const distanceToTarget = Phaser.Math.Distance.Between(this.x, this.y, target.x, target.y);
-    
+
     // 如果移動距離大於到目標的距離，直接移動到目標點
     if (moveDistance >= distanceToTarget) {
       this.x = target.x;
@@ -567,7 +567,11 @@ export default class Enemy {
       this.scene.onEnemyDied(this);
     }
 
-    // 死亡特效
+    // 死亡特效 (可愛版)
+    if (this.scene.effectManager) {
+      this.scene.effectManager.createDeathEffect(this.x, this.y);
+    }
+
     this.scene.tweens.add({
       targets: this.sprite,
       scale: 0,
@@ -579,18 +583,7 @@ export default class Enemy {
       }
     });
 
-    // 爆炸粒子
-    const particles = this.scene.add.particles(this.x, this.y, 'particle', {
-      speed: { min: 100, max: 200 },
-      scale: { start: 1, end: 0 },
-      alpha: { start: 1, end: 0 },
-      tint: [0xFF0000, 0xFFFF00, 0xFF6347],
-      lifespan: 500,
-      quantity: 20,
-      blendMode: 'ADD'
-    });
 
-    this.scene.time.delayedCall(500, () => particles.destroy());
 
     // 金幣獎勵已經在 onEnemyDied 中處理（包含加成計算）
 
@@ -732,7 +725,7 @@ export default class Enemy {
     this.bossAbilities.forEach(ability => {
       this.abilityTimers[ability.name] += delta;
 
-      switch(ability.name) {
+      switch (ability.name) {
         case 'speed':
           this.updateSpeedAbility(delta);
           break;
@@ -755,7 +748,7 @@ export default class Enemy {
     const ability = this.bossAbilities[0];
     this.abilityTimers[ability.name] += delta;
 
-    switch(ability.name) {
+    switch (ability.name) {
       case 'speed':
         this.updateSpeedAbility(delta);
         break;

@@ -8,6 +8,8 @@ import WaveManager from '../managers/WaveManager.js';
 import TowerManager from '../managers/TowerManager.js';
 import UIManager from '../managers/UIManager.js';
 import EconomyManager from '../managers/EconomyManager.js';
+import AudioManager from '../managers/AudioManager.js';
+import MapManager, { DEFAULT_MAP } from '../managers/MapManager.js';
 
 // 遊戲配置參數
 const BOSS_WAVE_INTERVAL = 10; // 每幾波出現一次Boss
@@ -103,6 +105,8 @@ export default class GameScene extends Phaser.Scene {
     this.towerManager = new TowerManager(this);
     this.uiManager = new UIManager(this);
     this.economyManager = new EconomyManager(this);
+    this.audioManager = new AudioManager(this);
+    this.mapManager = new MapManager(this);
 
     if (this.gameMode === 'singlePlayer') {
       this.initializeSinglePlayerGame();
@@ -113,7 +117,7 @@ export default class GameScene extends Phaser.Scene {
 
     this.input.on('pointerdown', (pointer) => this.handleMapClick(pointer));
     this.input.on('pointermove', (pointer) => this.towerManager.handleMouseMove(pointer));
-    
+
     // 添加鍵盤快捷鍵 (只在單機模式下)
     if (this.gameMode === 'singlePlayer') {
       this.input.keyboard.on('keydown-SPACE', () => {
@@ -125,15 +129,55 @@ export default class GameScene extends Phaser.Scene {
 
     this.events.once('shutdown', this.onSceneShutdown, this);
     this.events.once('destroy', this.onSceneShutdown, this);
+
+    // 監聽瀏覽器標籤頁可見性變化，解決 Chrome tab 切換後速度異常問題
+    this.visibilityChangeHandler = this.handleVisibilityChange.bind(this);
+    document.addEventListener('visibilitychange', this.visibilityChangeHandler);
+  }
+
+  /**
+   * 處理瀏覽器標籤頁可見性變化
+   * 當用戶從其他 tab 切回遊戲時，重新同步遊戲速度設置
+   */
+  handleVisibilityChange() {
+    if (document.visibilityState === 'visible') {
+      // 標籤頁恢復可見
+      const targetSpeed = this.uiManager?.gameSpeed || 1;
+
+      // 確保 timeScale 保持正確
+      this.physics.world.timeScale = targetSpeed;
+      this.time.timeScale = targetSpeed;
+      this.gameSpeedMultiplier = targetSpeed;
+
+      // 標記需要進行時間補償，讓遊戲立即恢復正常速度感
+      // Chrome 會在恢復時暫時節流，我們需要補償這段時間
+      this.tabRecoveryTime = Date.now();
+      this.tabRecoveryFrames = 0;
+    } else {
+      // 標籤頁進入背景，記錄離開時間
+      this.tabHiddenTime = Date.now();
+    }
   }
 
   initializeSinglePlayerGame() {
     this.createLayout();
-    this.createPath();
-    this.createBuildableAreas();
+
+    // 初始化音效管理器
+    if (!this.audioManager) {
+      this.audioManager = new AudioManager(this);
+    }
+    this.audioManager.startBGM();
+
+    // 使用瓦片地圖系統
+    this.path = this.mapManager.createMap(DEFAULT_MAP);
+    this.mapBounds = this.mapManager.getMapBounds();
+
     this.uiManager.createUI();
     this.playerPath = this.path;
     this.playerBuildBounds = this.mapBounds;
+
+    // 格線覆蓋層現在由 MapManager 的瓦片邊框提供視覺輔助
+    // 不再需要額外的 createGridOverlay
   }
 
   initializeMultiplayerGame() {
@@ -181,10 +225,10 @@ export default class GameScene extends Phaser.Scene {
       this.opponentPlayerId = data.opponentId || null;
       this.localPlayerId = SocketService.socket ? SocketService.socket.id : null;
       this.opponentLives = 20;
-      
+
       const player1Area = new Phaser.Geom.Rectangle(0, 0, 600, 500);
       const player2Area = new Phaser.Geom.Rectangle(600, 0, 600, 500);
-      
+
       if (this.playerNumber === 1) {
         this.playerAreaRect = player1Area;
         this.opponentAreaRect = player2Area;
@@ -515,7 +559,7 @@ export default class GameScene extends Phaser.Scene {
   createGhostEnemy({ enemyId, wave = 1, isBoss = false, emoji = null }) {
     if (!this.opponentPath || this.opponentPath.length === 0) return null;
     const startPoint = this.opponentPath[0];
-    
+
     // 根據波數和是否為BOSS調整體型
     let fontSize, healthWidth, offsetY;
     if (isBoss) {
@@ -539,7 +583,7 @@ export default class GameScene extends Phaser.Scene {
         offsetY = 20;
       }
     }
-    
+
     const chosenEmoji = emoji || (isBoss ? '🤡' : '🤡');
     const sprite = this.add.text(startPoint.x, startPoint.y, chosenEmoji, {
       fontSize,
@@ -859,12 +903,23 @@ export default class GameScene extends Phaser.Scene {
   }
 
   onSceneShutdown() {
+    // 清理 visibilitychange 事件監聽器
+    if (this.visibilityChangeHandler) {
+      document.removeEventListener('visibilitychange', this.visibilityChangeHandler);
+      this.visibilityChangeHandler = null;
+    }
+
+    // 清理音效
+    if (this.audioManager) {
+      this.audioManager.cleanup();
+    }
+
     // 重置遊戲速度到正常
     this.physics.world.timeScale = 1;
     this.time.timeScale = 1;
     this.gameSpeedMultiplier = 1;
     this.scaledGameTime = 0;
-    
+
     if (this.waveTimerEvent) {
       this.waveTimerEvent.remove(false);
       this.waveTimerEvent = null;
@@ -1197,10 +1252,36 @@ export default class GameScene extends Phaser.Scene {
   update(time, delta) {
     if (this.isGameOver || this.matchEnded) return;
 
-    const speedMultiplier = this.gameMode === 'multiplayer'
-      ? 1
-      : (this.gameSpeedMultiplier || 1);
-    const scaledDelta = delta * speedMultiplier;
+    // 限制最大 delta 以避免切換分頁後的瞬間移動或邏輯錯誤
+    // 這能解決長時間背景執行後切回來導致的數值崩壞，也能避免過大的時間跳躍
+    if (delta > 500) delta = 500;
+
+    // Chrome tab 恢復期間的時間補償
+    // Chrome 切 tab 回來後會暫時節流幀率（約 100-500ms 才恢復到 60fps）
+    // 在恢復期間的前 30 幀，我們強制使用理想的 delta 值來避免遊戲看起來變慢
+    let deltaAlreadyScaled = false;
+    if (this.tabRecoveryTime) {
+      const timeSinceRecovery = Date.now() - this.tabRecoveryTime;
+      this.tabRecoveryFrames = (this.tabRecoveryFrames || 0) + 1;
+
+      // 恢復期間（500ms 內或前 30 幀），使用理想的 delta 值
+      if (timeSinceRecovery < 500 && this.tabRecoveryFrames < 30) {
+        // 使用目標速度計算理想 delta（60fps = 16.67ms），已包含速度倍率
+        const targetSpeed = this.uiManager?.gameSpeed || 1;
+        delta = 16.67 * targetSpeed;
+        deltaAlreadyScaled = true;
+      } else {
+        // 恢復完成，清除標記
+        this.tabRecoveryTime = null;
+        this.tabRecoveryFrames = 0;
+      }
+    }
+
+    // 重要：Phaser 的 scene.time.timeScale 只影響計時器（如 delayedCall），
+    // 不影響 update 回調的 delta 值。必須手動乘以遊戲速度倍率。
+    // Tab 恢復期間 delta 已包含速度倍率，無需重複乘。
+    const gameSpeed = this.gameSpeedMultiplier || 1;
+    const scaledDelta = deltaAlreadyScaled ? delta : delta * gameSpeed;
     this.scaledGameTime = (this.scaledGameTime || 0) + scaledDelta;
     const scaledTime = this.scaledGameTime;
 

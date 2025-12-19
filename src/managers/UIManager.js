@@ -16,7 +16,7 @@ export default class UIManager {
     this.hintText = null;
     this.opponentLivesText = null;
     this.matchStatusText = null;
-    
+
     // 遊戲速度控制
     this.gameSpeed = 1; // 預設1倍速
     this.speedButton = null;
@@ -513,9 +513,9 @@ export default class UIManager {
     // 添加半透明背景
     const bgPadding = 5;
     this.speedBg = this.scene.add.rectangle(
-      buttonX, buttonY, 
-      buttonWidth + bgPadding * 2, 
-      buttonHeight + bgPadding * 2, 
+      buttonX, buttonY,
+      buttonWidth + bgPadding * 2,
+      buttonHeight + bgPadding * 2,
       0x000000, 0.3
     );
     this.speedBg.setDepth(149);
@@ -577,7 +577,7 @@ export default class UIManager {
       this.speedButton.setFillStyle(this.getSpeedButtonColor());
     }
 
-    // 應用速度到遊戲引擎 - Phaser 會自動處理依賴 timeScale 的系統
+    // 應用速度到遊戲引擎 - Phaser 會自動處理依賴 timeScale 的系統 (包含 Timer Event)
     this.scene.physics.world.timeScale = this.gameSpeed;
     this.scene.time.timeScale = this.gameSpeed;
     this.scene.gameSpeedMultiplier = this.gameSpeed;

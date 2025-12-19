@@ -28,6 +28,19 @@ export default class TowerManager {
 
     // 網絡ID生成
     this.nextTowerNetworkId = 1;
+
+    // 格線對齊設定
+    this.GRID_SIZE = 50; // 格線大小（像素）
+    this.gridOverlay = null; // 格線視覺元素
+  }
+
+  /**
+   * 將座標吸附到最近的格線點
+   */
+  snapToGrid(x, y) {
+    const snappedX = Math.round(x / this.GRID_SIZE) * this.GRID_SIZE;
+    const snappedY = Math.round(y / this.GRID_SIZE) * this.GRID_SIZE;
+    return { x: snappedX, y: snappedY };
   }
 
   /**
@@ -85,15 +98,20 @@ export default class TowerManager {
       return;
     }
 
-    // 檢查位置是否合法
-    const placement = this.getPlacementStatus(x, y);
+    // 🎯 格線吸附：將建造座標對齊到格線
+    const snapped = this.snapToGrid(x, y);
+    const buildX = snapped.x;
+    const buildY = snapped.y;
+
+    // 檢查位置是否合法（使用吸附後的座標）
+    const placement = this.getPlacementStatus(buildX, buildY);
     if (!placement.valid) {
       this.showMessage(placement.reason, 0xFF0000);
       return;
     }
 
-    // 創建塔
-    const tower = new Tower(this.scene, x, y, towerType);
+    // 創建塔（使用吸附後的座標）
+    const tower = new Tower(this.scene, buildX, buildY, towerType);
     this.scene.playerTowers.push(tower);
     this.scene.towers.push(tower);
 
@@ -119,12 +137,17 @@ export default class TowerManager {
       this.previewTower = null;
     }
 
-    // 創建建造特效
-    this.scene.effectManager.createBuildEffect(x, y, config.color);
+    // 創建建造特效（使用吸附後的座標）
+    this.scene.effectManager.createBuildEffect(buildX, buildY, config.color);
+
+    // 播放建造音效
+    if (this.scene.audioManager) {
+      this.scene.audioManager.playBuildSound();
+    }
 
     // 多人模式：廣播建造事件
     if (this.scene.gameMode === 'multiplayer') {
-      const localX = x - this.scene.playerMapBounds.x;
+      const localX = buildX - this.scene.playerMapBounds.x;
       const ownerId = this.scene.localPlayerId || (SocketService.socket ? SocketService.socket.id : null);
       if (!this.scene.localPlayerId && ownerId) this.scene.localPlayerId = ownerId;
 
@@ -134,7 +157,7 @@ export default class TowerManager {
           towerId,
           towerType,
           x: localX,
-          y,
+          y: buildY,
           ownerId
         });
       }
@@ -157,13 +180,20 @@ export default class TowerManager {
     // 檢查邊界
     const margin = 12;
     if (x < bounds.left + margin || x > bounds.right - margin ||
-        y < bounds.top + margin || y > bounds.bottom - margin) {
+      y < bounds.top + margin || y > bounds.bottom - margin) {
       return { valid: false, reason: '🚧 超出可建造範圍！' };
     }
 
-    // 檢查路徑
-    if (pathPoints && this.isPointOnPath(x, y, pathPoints)) {
-      return { valid: false, reason: '🚫 不能在路徑上建造！' };
+    // 單人模式：使用瓦片地圖檢查可建造區域
+    if (isSinglePlayer && this.scene.mapManager) {
+      if (!this.scene.mapManager.isBuildable(x, y)) {
+        return { valid: false, reason: '🚫 不能在路徑上建造！' };
+      }
+    } else {
+      // 多人模式：使用舊的路徑碰撞檢測
+      if (pathPoints && this.isPointOnPath(x, y, pathPoints)) {
+        return { valid: false, reason: '🚫 不能在路徑上建造！' };
+      }
     }
 
     // 檢查與其他塔的距離
@@ -269,26 +299,37 @@ export default class TowerManager {
       Object.values(this.previewTower).forEach(p => p.setVisible(true));
     }
 
+    // 🎯 格線吸附：將座標對齊到格線
+    const snapped = this.snapToGrid(pointer.x, pointer.y);
+    const previewX = snapped.x;
+    const previewY = snapped.y;
+
     const config = TowerConfig[this.selectedTower];
-    const status = this.getPlacementStatus(pointer.x, pointer.y);
+    const status = this.getPlacementStatus(previewX, previewY);
     const valid = status.valid;
 
-    // 創建或更新預覽
+    // 創建或更新預覽（使用吸附後的座標）
     if (!this.previewTower) {
       this.previewTower = {
-        circle: this.scene.add.circle(pointer.x, pointer.y, 20, config.color, 0.5),
-        range: this.scene.add.circle(pointer.x, pointer.y, config.range, config.effectColor, 0.1)
+        circle: this.scene.add.circle(previewX, previewY, 20, config.color, 0.5),
+        range: this.scene.add.circle(previewX, previewY, config.range, config.effectColor, 0.1)
           .setStrokeStyle(2, config.effectColor, 0.3),
-        dot: this.scene.add.circle(pointer.x, pointer.y, 6, 0xFFFFFF, 1)
+        dot: this.scene.add.circle(previewX, previewY, 6, 0xFFFFFF, 1),
+        // 格線吸附視覺指示器（顯示吸附格子）
+        gridHighlight: this.scene.add.rectangle(previewX, previewY, this.GRID_SIZE - 4, this.GRID_SIZE - 4)
+          .setStrokeStyle(2, 0xFFFFFF, 0.4)
+          .setFillStyle(0xFFFFFF, 0.05)
       };
       this.previewTower.range.setDepth(98);
       this.previewTower.circle.setDepth(99);
       this.previewTower.dot.setDepth(100);
+      this.previewTower.gridHighlight.setDepth(97);
       this.previewTower.dot.setStrokeStyle(2, 0x2ECC71, 0.6);
     } else {
-      this.previewTower.circle.setPosition(pointer.x, pointer.y);
-      this.previewTower.range.setPosition(pointer.x, pointer.y);
-      this.previewTower.dot.setPosition(pointer.x, pointer.y);
+      this.previewTower.circle.setPosition(previewX, previewY);
+      this.previewTower.range.setPosition(previewX, previewY);
+      this.previewTower.dot.setPosition(previewX, previewY);
+      this.previewTower.gridHighlight.setPosition(previewX, previewY);
     }
 
     // 根據合法性改變顏色
@@ -296,6 +337,8 @@ export default class TowerManager {
     this.previewTower.range.setStrokeStyle(2, valid ? config.effectColor : 0xE74C3C, valid ? 0.35 : 0.7);
     this.previewTower.dot.setFillStyle(valid ? 0xFFFFFF : 0xFFCDD2, 1);
     this.previewTower.dot.setStrokeStyle(2, valid ? 0x2ECC71 : 0xC0392B, valid ? 0.7 : 0.9);
+    this.previewTower.gridHighlight.setStrokeStyle(2, valid ? 0x2ECC71 : 0xE74C3C, 0.6);
+    this.previewTower.gridHighlight.setFillStyle(valid ? 0x2ECC71 : 0xE74C3C, valid ? 0.1 : 0.15);
   }
 
   // #endregion
@@ -334,6 +377,11 @@ export default class TowerManager {
     this.hideUpgradePanel();
     this.showUpgradePanel(tower);
     this.scene.effectManager.createUpgradeEffect(tower.x, tower.y, tower.config.effectColor);
+
+    // 播放升級音效
+    if (this.scene.audioManager) {
+      this.scene.audioManager.playUpgradeSound();
+    }
   }
 
   /**
@@ -343,7 +391,7 @@ export default class TowerManager {
     if (!tower || !tower.sprite || !tower.sprite.active) return;
 
     const sellPrice = Math.floor(tower.totalInvestment * 0.7);
-    
+
     // 先隱藏升級面板
     this.hideUpgradePanel();
 
@@ -476,7 +524,7 @@ export default class TowerManager {
         roomId: this.scene.roomId,
         towerId: tower.networkId
       });
-      
+
       // 從網絡ID映射中移除
       this.scene.towerById.delete(tower.networkId);
     }
@@ -836,6 +884,11 @@ export default class TowerManager {
     this.scene.effectManager.createCraftEffect(newX, newY, newConfig.color);
     this.showMessage(`🎉 成功合成 ${newConfig.emoji} ${newConfig.name}！Lv.${inheritLevel}`, 0xFFD700);
 
+    // 播放合成音效
+    if (this.scene.audioManager) {
+      this.scene.audioManager.playCraftSound();
+    }
+
     // 清理合成狀態
     this.clearCraftSelection();
     this.craftMode = false;
@@ -1000,6 +1053,55 @@ export default class TowerManager {
     const timestamp = Date.now();
     const playerId = this.scene.localPlayerId || SocketService.socket?.id || 'local';
     return `${playerId}_tower_${timestamp}_${this.nextTowerNetworkId++}`;
+  }
+
+  /**
+   * 創建格線覆蓋層（視覺化對齊輔助）
+   */
+  createGridOverlay(bounds) {
+    if (this.gridOverlay) {
+      this.gridOverlay.destroy();
+    }
+
+    const graphics = this.scene.add.graphics();
+    graphics.setDepth(5); // 在草地上方，但在路徑和塔下方
+
+    // 繪製淺色格線
+    graphics.lineStyle(1, 0x000000, 0.08);
+
+    const left = bounds.left || bounds.x;
+    const top = bounds.top || bounds.y;
+    const right = bounds.right || (bounds.x + bounds.width);
+    const bottom = bounds.bottom || (bounds.y + bounds.height);
+
+    // 對齊到格線起點
+    const startX = Math.ceil(left / this.GRID_SIZE) * this.GRID_SIZE;
+    const startY = Math.ceil(top / this.GRID_SIZE) * this.GRID_SIZE;
+
+    // 繪製垂直線
+    for (let x = startX; x <= right; x += this.GRID_SIZE) {
+      graphics.moveTo(x, top);
+      graphics.lineTo(x, bottom);
+    }
+
+    // 繪製水平線
+    for (let y = startY; y <= bottom; y += this.GRID_SIZE) {
+      graphics.moveTo(left, y);
+      graphics.lineTo(right, y);
+    }
+
+    graphics.strokePath();
+
+    // 在每個格線交叉點添加小點（可選，增加視覺輔助）
+    graphics.fillStyle(0x000000, 0.1);
+    for (let x = startX; x <= right; x += this.GRID_SIZE) {
+      for (let y = startY; y <= bottom; y += this.GRID_SIZE) {
+        graphics.fillCircle(x, y, 2);
+      }
+    }
+
+    this.gridOverlay = graphics;
+    return graphics;
   }
 
   /**

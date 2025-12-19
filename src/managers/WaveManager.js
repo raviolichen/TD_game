@@ -105,6 +105,11 @@ export default class WaveManager {
     this.wave++;
     this.updateUI();
 
+    // 播放波次開始音效
+    if (this.scene.audioManager) {
+      this.scene.audioManager.playWaveStartSound();
+    }
+
     const isBossWave = (this.wave % BOSS_WAVE_INTERVAL === 0);
     let nextDelay = 30000;
 
