@@ -1,16 +1,16 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-The game runtime lives under `src/`, following Phaser’s scene/entity pattern. `src/main.js` boots the game and registers the active scene. `src/scenes/GameScene.js` orchestrates layout, UI, wave logic, and should remain the only scene touching Phaser lifecycle hooks. Entity behaviour stays inside `src/entities/` (`Tower.js`, `Enemy.js`), while balance data and crafting rules belong in `src/config/towerConfig.js`. Static scaffolding (`index.html`) mounts the canvas; release documentation sits in root Markdown files. Screenshots and visual references are archived in `截圖/`.
+The game is plain JavaScript with a Canvas 2D renderer; there is no game engine. `src/main.js` boots `src/ui/App.js`, which owns the DOM, input, and the fixed-timestep loop. Game rules live in `src/game/` and must stay DOM-free so they run under Node (`Game.js` state and combat, `maps.js` procedural maps, `waves.js` spawn curves, `towerLogic.js` stats and merge rules). Only `Renderer.js`, `audio.js`, and `storage.js` touch browser APIs. All balance numbers belong in `src/config/`.
 
 ## Build, Test, and Development Commands
-Run `npm install` once per machine. `npm run dev` launches the Vite dev server on `http://localhost:3000` with hot reload, ideal for balancing sessions. `npm run build` emits a production bundle to `dist/`, and `npm run preview` serves that bundle for smoke-testing a release candidate.
+Run `npm install` once. `npm run dev` starts Vite on `http://localhost:3000` (the `App` instance is exposed as `window.td` in dev). `npm run build` emits `dist/`, `npm run preview` serves it. `npm test` runs the `node:test` suites in `tests/`. `npm run sim -- <easy|normal|hard> <runs>` plays headless games with a greedy bot; re-run it after balance changes and report the average wave reached.
 
 ## Coding Style & Naming Conventions
-Use modern ES modules with two-space indentation, trailing semicolons, and single quotes to match the existing code. Class files use PascalCase filenames (`Tower.js`), while exports inside modules remain camelCase. Prefer small pure helpers for calculations or targeting logic and avoid embedding long literal tables inside scene methods—move them to `src/config/` instead. Clean up any Phaser-managed objects within paired lifecycle hooks to prevent memory leaks between waves.
+ES modules, two-space indentation, semicolons, single quotes. Class files use PascalCase (`Game.js`), other modules camelCase. Keep data tables in `src/config/`, keep helpers pure, and keep UI text in Traditional Chinese. Wrap every `localStorage` access in try/catch (see `storage.js`).
 
 ## Testing Guidelines
-Automated tests are not yet wired up. Until Vitest or similar is introduced, validate changes by running `npm run dev`, exercising tower placement, crafting, and wave progression, and watching the browser console for warnings. If you add deterministic logic (such as damage formulas or spawn curves), provide focused helper functions and document manual verification steps in the pull request.
+Add `node:test` cases for deterministic logic (maps, merges, waves, save/load). For UI changes, run `npm run dev`, exercise building, upgrading, merging (button and drag), a map change at wave 20, and check the console for errors.
 
 ## Commit & Pull Request Guidelines
-Write commits in the imperative mood (e.g., `Add splash damage timer`) and keep related work together. For pull requests, include a concise summary, link any tracking issue, enumerate manual test steps, and attach updated screenshots from `截圖/` when visuals change. Call out potential regressions (performance, balance, localisation) so reviewers can target playtests efficiently.
+Write commits in the imperative mood and keep related work together. Pull requests should summarise the change, list manual test steps, include `npm run sim` results for balance changes, and attach screenshots when visuals change.

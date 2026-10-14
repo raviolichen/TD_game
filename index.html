@@ -1,233 +1,89 @@
-<!DOCTYPE html>
-<html lang="zh-TW">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>像素塔防 - Pixel Tower Defense</title>
-    <style>
-        body {
-            margin: 0;
-            padding: 0;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            background: linear-gradient(135deg, #89c6f5 0%, #6db3f2 50%, #a8e063 100%);
-            font-family: 'Courier New', monospace;
-            gap: 20px;
-            flex-wrap: wrap;
-            padding: 20px;
-        }
-        #game-container {
-            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
-            border-radius: 10px;
-            overflow: hidden;
-        }
-        #recipe-guide {
-            background: rgba(255, 255, 255, 0.95);
-            border-radius: 10px;
-            padding: 20px;
-            box-shadow: 0 5px 20px rgba(0,0,0,0.2);
-            max-width: 1200px;
-        }
-        #recipe-guide h2 {
-            margin: 0 0 15px 0;
-            color: #2c3e50;
-            font-size: 20px;
-            border-bottom: 3px solid #3498db;
-            padding-bottom: 8px;
-            text-align: center;
-        }
-        .recipe-container {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 15px;
-        }
-        .recipe-tier {
-            background: #f8f9fa;
-            padding: 12px;
-            border-radius: 8px;
-            border: 2px solid #e9ecef;
-        }
-        .recipe-tier h3 {
-            margin: 0 0 10px 0;
-            font-size: 15px;
-            color: #34495e;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            padding-bottom: 8px;
-            border-bottom: 2px solid #dee2e6;
-        }
-        .tier-1 { color: #808080; }
-        .tier-2 { color: #4169E1; }
-        .tier-3 { color: #FFD700; text-shadow: 1px 1px 2px rgba(0,0,0,0.3); }
-        .tier-4 { color: #FF1493; text-shadow: 1px 1px 2px rgba(0,0,0,0.3); }
-
-        .recipe-item {
-            background: white;
-            border-left: 3px solid #3498db;
-            padding: 6px 10px;
-            margin: 6px 0;
-            border-radius: 4px;
-            font-size: 12px;
-            line-height: 1.5;
-        }
-        .recipe-formula {
-            color: #7f8c8d;
-            font-size: 11px;
-            margin-top: 2px;
-        }
-        .recipe-item strong {
-            color: #2c3e50;
-            font-size: 13px;
-        }
-
-        /* 响应式布局 */
-        @media (max-width: 1400px) {
-            .recipe-container {
-                grid-template-columns: repeat(2, 1fr);
-            }
-            #recipe-guide {
-                max-width: 700px;
-            }
-        }
-        @media (max-width: 768px) {
-            .recipe-container {
-                grid-template-columns: 1fr;
-            }
-            #recipe-guide {
-                max-width: 350px;
-            }
-        }
-    </style>
-</head>
-<body>
-    <div id="game-container"></div>
-
-    <div id="recipe-guide">
-        <h2>🔨 合成配方指南</h2>
-
-        <div class="recipe-container">
-            <div class="recipe-tier">
-                <h3 class="tier-1">⚙️ 基礎塔</h3>
-                <div class="recipe-item">
-                    <strong>🏹 箭塔</strong> - $100<br>
-                    基礎單體攻擊塔
-                </div>
-                <div class="recipe-item">
-                    <strong>🔥 火焰塔</strong> - $120<br>
-                    造成灼燒持續傷害
-                </div>
-                <div class="recipe-item">
-                    <strong>❄️ 冰霜塔</strong> - $110<br>
-                    減速敵人移動
-                </div>
-                <div class="recipe-item">
-                    <strong>✨ 魔法塔</strong> - $130<br>
-                    魔法傷害無視護甲
-                </div>
-            </div>
-
-            <div class="recipe-tier">
-                <h3 class="tier-2">⭐ 中階塔</h3>
-                <div class="recipe-item">
-                    <strong>🔫 機槍塔</strong> - $250<br>
-                    <div class="recipe-formula">🏹 箭塔 + 🏹 箭塔</div>
-                </div>
-                <div class="recipe-item">
-                    <strong>🚀 火箭塔</strong> - $280<br>
-                    <div class="recipe-formula">🏹 箭塔 + 🔥 火焰塔</div>
-                </div>
-                <div class="recipe-item">
-                    <strong>🧊 冰凍炮</strong> - $270<br>
-                    <div class="recipe-formula">❄️ 冰霜塔 + ❄️ 冰霜塔</div>
-                </div>
-                <div class="recipe-item">
-                    <strong>⚡ 雷電塔</strong> - $300<br>
-                    <div class="recipe-formula">✨ 魔法塔 + ✨ 魔法塔</div>
-                </div>
-                <div class="recipe-item">
-                    <strong>☠️ 毒素塔</strong> - $290<br>
-                    <div class="recipe-formula">🔥 火焰塔 + ✨ 魔法塔</div>
-                </div>
-                <div class="recipe-item">
-                    <strong>🎯 狙擊塔</strong> - $280<br>
-                    <div class="recipe-formula">✨ 魔法塔 + 🏹 箭塔</div>
-                </div>
-                <div class="recipe-item">
-                    <strong>💣 陷阱塔</strong> - $260<br>
-                    <div class="recipe-formula">✨ 魔法塔 + ❄️ 冰霜塔</div>
-                </div>
-                <div class="recipe-item">
-                    <strong>🌊 蒸氣塔</strong> - $270<br>
-                    <div class="recipe-formula">❄️ 冰霜塔 + 🔥 火焰塔</div>
-                </div>
-            </div>
-
-            <div class="recipe-tier">
-                <h3 class="tier-3">👑 終極塔</h3>
-                <div class="recipe-item">
-                    <strong>💥 終極炮塔</strong> - $600<br>
-                    <div class="recipe-formula">🚀 火箭塔 + 🔫 機槍塔</div>
-                </div>
-                <div class="recipe-item">
-                    <strong>🌨️ 極寒要塞</strong> - $650<br>
-                    <div class="recipe-formula">🧊 冰凍炮 + ⚡ 雷電塔</div>
-                </div>
-                <div class="recipe-item">
-                    <strong>🌪️ 混沌法陣</strong> - $700<br>
-                    <div class="recipe-formula">☠️ 毒素塔 + ⚡ 雷電塔</div>
-                </div>
-                <div class="recipe-item">
-                    <strong>☀️ 太陽炎塔</strong> - $620<br>
-                    <div class="recipe-formula">🚀 火箭塔 + ☠️ 毒素塔</div>
-                </div>
-                <div class="recipe-item">
-                    <strong>🗡️ 破甲塔</strong> - $650<br>
-                    <div class="recipe-formula">🎯 狙擊塔 + ⚡ 雷電塔</div>
-                </div>
-                <div class="recipe-item">
-                    <strong>💰 金錢塔</strong> - $550<br>
-                    <div class="recipe-formula">🎯 狙擊塔 + 💣 陷阱塔</div>
-                </div>
-                <div class="recipe-item">
-                    <strong>💨 蒸汽炮塔</strong> - $600<br>
-                    <div class="recipe-formula">🌊 蒸氣塔 + 🎯 狙擊塔</div>
-                </div>
-            </div>
-
-            <div class="recipe-tier">
-                <h3 class="tier-4">✨ 超終極塔</h3>
-                <div class="recipe-item" style="border-left-color: #FF1493;">
-                    <strong>🔆 光環塔</strong> - $2000<br>
-                    <div class="recipe-formula">💥 終極炮塔 + 🌨️ 極寒要塞 + 🌪️ 混沌法陣</div>
-                    <div style="font-size: 10px; color: #e74c3c; margin-top: 4px;">⚠️ 需要三座終極塔合成</div>
-                    <div style="font-size: 10px; color: #27ae60; margin-top: 4px;">💫 全地圖增幅效果 (每等級)</div>
-                    <div style="font-size: 10px; color: #666; margin-top: 2px;">• 塔攻速 +10%</div>
-                    <div style="font-size: 10px; color: #666;">• 塔傷害 +10%</div>
-                    <div style="font-size: 10px; color: #666;">• 怪速度 -3%</div>
-                </div>
-                <div class="recipe-item" style="border-left-color: #FF1493;">
-                    <strong>🏭 蒸汽工廠</strong> - $2500<br>
-                    <div class="recipe-formula">💰 金錢塔 + 💨 蒸汽炮塔 + 🗡️ 破甲塔</div>
-                    <div style="font-size: 10px; color: #e74c3c; margin-top: 4px;">⚠️ 需要三座終極塔合成</div>
-                    <div style="font-size: 10px; color: #27ae60; margin-top: 4px;">💫 全地圖增幅效果 (每等級)</div>
-                    <div style="font-size: 10px; color: #666; margin-top: 2px;">• 金幣 +10%</div>
-                    <div style="font-size: 10px; color: #666;">• 真傷 +3%最大血量</div>
-                </div>
-                <div class="recipe-item" style="border-left-color: #FF1493;">
-                    <strong>☄️ 隕石塔</strong> - $2800<br>
-                    <div class="recipe-formula">☀️ 太陽炎塔 + 💥 終極炮塔 + 🌪️ 混沌法陣</div>
-                    <div style="font-size: 10px; color: #e74c3c; margin-top: 4px;">⚠️ 需要三座終極塔合成</div>
-                    <div style="font-size: 10px; color: #27ae60; margin-top: 4px;">💫 全地圖隨機隕石轟炸</div>
-                    <div style="font-size: 10px; color: #666; margin-top: 2px;">• 3-5顆隕石</div>
-                    <div style="font-size: 10px; color: #666;">• 持續火焰區域</div>
-                </div>
-            </div>
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>像素塔防：遷徙之戰</title>
+  </head>
+  <body>
+    <div id="app">
+      <header id="topbar">
+        <div class="stats">
+          <span class="stat" title="生命"><b>❤</b> <span id="lives">0</span></span>
+          <span class="stat" title="金幣"><b>💰</b> <span id="gold">0</span></span>
+          <span class="stat" title="波次"><b>🌊</b> <span id="wave">0</span></span>
+          <span class="stat map" title="目前地圖"><b>🗺</b> <span id="map-name"></span></span>
+          <span class="stat shift" id="map-shift" title="距離地圖變遷"></span>
         </div>
-    </div>
+        <div class="controls">
+          <button id="btn-start" class="primary">開始第 1 波</button>
+          <button id="btn-auto" title="波次結束後自動開始下一波">自動：關</button>
+          <button id="btn-speed" title="遊戲速度 (F)">1×</button>
+          <button id="btn-pause" title="暫停 (P)">⏸</button>
+          <button id="btn-sound" title="音效">🔊</button>
+          <button id="btn-help" title="說明 (H)">❓</button>
+          <button id="btn-menu" title="主選單">☰</button>
+        </div>
+      </header>
 
+      <main id="layout">
+        <div id="board">
+          <canvas id="canvas"></canvas>
+          <div id="banner" hidden></div>
+          <div id="toasts"></div>
+          <div id="paused-overlay" hidden>暫停中</div>
+        </div>
+
+        <aside id="side">
+          <section class="panel">
+            <h2>建造 <small>點選後放到地圖上</small></h2>
+            <div id="shop"></div>
+          </section>
+          <section class="panel" id="info-panel">
+            <h2>塔的資訊</h2>
+            <div id="info"><p class="hint">點選地圖上的塔查看、升級、合成或賣出。<br />把同種同星的塔拖到另一座上即可合成。</p></div>
+          </section>
+          <section class="panel" id="bench-panel">
+            <h2>倉庫 <small id="bench-count"></small></h2>
+            <div id="bench"><p class="hint">地圖變遷時，所有塔會收進倉庫，可免費重新部署。</p></div>
+          </section>
+          <section class="panel">
+            <h2>下一波 <small id="next-wave-no"></small></h2>
+            <div id="next-wave"></div>
+          </section>
+        </aside>
+      </main>
+
+      <div id="menu" class="overlay">
+        <div class="dialog">
+          <h1>像素塔防：遷徙之戰</h1>
+          <p class="sub">建塔、升級、合成，撐過每 20 波一次的地圖變遷！</p>
+          <div class="difficulty" id="difficulty"></div>
+          <div class="actions">
+            <button id="btn-new" class="primary big">新遊戲</button>
+            <button id="btn-continue" class="big" hidden>繼續遊戲</button>
+            <button id="btn-menu-help" class="big">遊戲說明</button>
+          </div>
+          <p class="best" id="best"></p>
+        </div>
+      </div>
+
+      <div id="help" class="overlay" hidden>
+        <div class="dialog wide">
+          <button class="close" data-close="help">✕</button>
+          <h1>遊戲說明</h1>
+          <div id="help-content"></div>
+        </div>
+      </div>
+
+      <div id="result" class="overlay" hidden>
+        <div class="dialog">
+          <h1 id="result-title"></h1>
+          <div id="result-body"></div>
+          <div class="actions" id="result-actions"></div>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.js"></script>
-</body>
+  </body>
 </html>
