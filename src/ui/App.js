@@ -35,7 +35,12 @@ export class App {
     this.bindControls();
     this.bindCanvas();
     this.bindKeys();
-    window.addEventListener('resize', () => this.renderer.resize());
+    const syncTopbar = () => document.documentElement.style.setProperty('--topbar-h', `${$('topbar').offsetHeight}px`);
+    syncTopbar();
+    window.addEventListener('resize', () => {
+      syncTopbar();
+      this.renderer.resize();
+    });
     document.addEventListener('visibilitychange', () => {
       this.last = performance.now();
       this.acc = 0;

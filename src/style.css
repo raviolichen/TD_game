@@ -41,7 +41,7 @@ button.danger { border-color: #7a3434; color: #ffb4b4; }
 button.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
 button.big { padding: 10px 22px; font-size: 16px; }
 
-#app { max-width: 1180px; margin: 0 auto; padding: 8px 16px 24px; }
+#app { padding: 8px 16px 16px; }
 
 #topbar {
   display: flex;
@@ -65,9 +65,11 @@ button.big { padding: 10px 22px; font-size: 16px; }
 
 @keyframes pulse { from { opacity: 1; } to { opacity: 0.6; } }
 
-#layout { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 12px; align-items: start; }
+#layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 12px; align-items: start; }
+#board-wrap { min-width: 0; }
 
-#board { position: relative; border-radius: 8px; overflow: hidden; border: 1px solid var(--border); background: #000; touch-action: none; }
+/* 依視窗高度放大畫布，保持 5:3 比例並填滿可用空間 */
+#board { width: min(100%, calc((100vh - var(--topbar-h, 64px) - 28px) * 5 / 3)); margin: 0 auto; position: relative; border-radius: 8px; overflow: hidden; border: 1px solid var(--border); background: #000; touch-action: none; }
 #canvas { display: block; width: 100%; height: auto; aspect-ratio: 800 / 480; cursor: crosshair; }
 
 #banner {
@@ -108,7 +110,7 @@ button.big { padding: 10px 22px; font-size: 16px; }
 }
 #paused-overlay[hidden], #banner[hidden] { display: none; }
 
-#side { display: flex; flex-direction: column; gap: 10px; }
+#side { display: flex; flex-direction: column; gap: 10px; max-height: calc(100vh - var(--topbar-h, 64px) - 28px); overflow-y: auto; }
 .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 10px; }
 .panel h2 { margin: 0 0 8px; font-size: 14px; display: flex; justify-content: space-between; align-items: baseline; }
 .panel h2 small { color: var(--muted); font-weight: 400; font-size: 12px; }
@@ -183,8 +185,15 @@ button.big { padding: 10px 22px; font-size: 16px; }
 
 kbd { background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; font-size: 12px; }
 
+@media (min-width: 1600px) {
+  html, body { font-size: 15px; }
+  #layout { grid-template-columns: minmax(0, 1fr) 380px; }
+}
+
 @media (max-width: 900px) {
   #layout { grid-template-columns: 1fr; }
+  #board { width: 100%; }
+  #side { max-height: none; overflow: visible; }
   #shop { grid-template-columns: repeat(6, 1fr); }
   .shop-btn .key { display: none; }
 }

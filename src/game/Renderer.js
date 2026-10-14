@@ -10,10 +10,14 @@ export class Renderer {
     this.cachedMap = null;
     this.time = 0;
     this.resize();
+    if (window.ResizeObserver) new ResizeObserver(() => this.resize()).observe(canvas);
   }
 
+  // 依畫布實際顯示大小決定解析度，放大到滿版時也保持清晰
   resize() {
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const shown = this.canvas.clientWidth || WIDTH;
+    const dpr = Math.min((shown / WIDTH) * (window.devicePixelRatio || 1), 4);
+    if (Math.abs(dpr - (this.dpr ?? 0)) < 0.01) return;
     this.dpr = dpr;
     this.canvas.width = WIDTH * dpr;
     this.canvas.height = HEIGHT * dpr;
