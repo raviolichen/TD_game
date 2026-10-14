@@ -222,7 +222,7 @@ export class Renderer {
     ctx.setLineDash([2, 10]);
     ctx.beginPath();
     ctx.moveTo(fly[0].x, fly[0].y);
-    ctx.lineTo(fly[1].x, fly[1].y);
+    for (const p of fly) ctx.lineTo(p.x, p.y);
     ctx.stroke();
     ctx.restore();
   }

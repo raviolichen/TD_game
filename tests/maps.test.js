@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { COLS, ROWS } from '../src/config/constants.js';
+import { COLS, HEIGHT, ROWS, WIDTH } from '../src/config/constants.js';
 import { CELL, generateMap, pointAt } from '../src/game/maps.js';
 
 const onEdge = (p) => p.x === 0 || p.y === 0 || p.x === COLS - 1 || p.y === ROWS - 1;
@@ -23,6 +23,16 @@ test('每張地圖的路徑都是連續、不重複、起訖點在邊緣', () =>
       const buildable = map.grid.flat().filter((c) => c === CELL.GROUND || c === CELL.POWER).length;
       assert.ok(buildable >= 80, `可建造格太少 ${buildable}`);
       assert.ok(map.grid.flat().includes(CELL.POWER));
+    }
+  }
+});
+
+test('飛行路線必須穿過地圖內部（不能整條在畫面外）', () => {
+  for (let seed = 1; seed <= 100; seed++) {
+    for (let index = 0; index < 5; index++) {
+      const route = generateMap(index, seed).flyPath;
+      const mid = pointAt(route, route.length / 2);
+      assert.ok(mid.x > 0 && mid.x < WIDTH && mid.y > 0 && mid.y < HEIGHT, `seed=${seed} index=${index}`);
     }
   }
 });

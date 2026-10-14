@@ -104,7 +104,9 @@ export function generateMap(index, seed) {
   }
 
   const groundPath = buildWaypoints(path);
-  const flyPath = [groundPath[0], groundPath[groundPath.length - 1]];
+  // 飛行路線：出生點 → 入口格 → 直線飛到出口格 → 終點；
+  // 入口與出口在同一邊時，若只連兩個場外點，整條路線會落在畫面外
+  const flyPath = [groundPath[0], groundPath[1], groundPath[groundPath.length - 2], groundPath[groundPath.length - 1]];
 
   return {
     index,
