@@ -412,10 +412,10 @@ export class Game {
       const radius = s.splash * TILE;
       for (const e of this.enemiesInRange(p.x, p.y, radius, s.targetsAir)) this.hit(e, s.damage, s, p.tower);
       this.addEffect({ kind: 'explosion', x: p.x, y: p.y, radius, ttl: 0.35, color: p.color });
-      this.emit('explode', p);
     } else if (p.target.alive) {
       this.hit(p.target, s.damage, s, p.tower);
     }
+    this.emit('impact', p);
   }
 
   hit(enemy, damage, s, tower) {

@@ -20,6 +20,7 @@
           <button id="btn-auto" title="波次結束後自動開始下一波">自動：關</button>
           <button id="btn-speed" title="遊戲速度 (F)">1×</button>
           <button id="btn-pause" title="暫停 (P)">⏸</button>
+          <button id="btn-music" title="背景音樂">🎵</button>
           <button id="btn-sound" title="音效">🔊</button>
           <button id="btn-help" title="說明 (H)">❓</button>
           <button id="btn-menu" title="主選單">☰</button>
@@ -63,6 +64,10 @@
             <button id="btn-new" class="primary big">新遊戲</button>
             <button id="btn-continue" class="big" hidden>繼續遊戲</button>
             <button id="btn-menu-help" class="big">遊戲說明</button>
+          </div>
+          <div class="volume">
+            <label>🎵 音樂 <input type="range" id="vol-music" min="0" max="100" /></label>
+            <label>🔊 音效 <input type="range" id="vol-sfx" min="0" max="100" /></label>
           </div>
           <p class="best" id="best"></p>
         </div>

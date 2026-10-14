@@ -65,7 +65,7 @@ export class App {
 
   bindGameEvents(game) {
     game.on('waveStart', (plan) => {
-      this.sfx.play('wave');
+      this.sfx.play(plan.boss ? 'boss' : 'wave');
       if (plan.boss) this.toast(`第 ${plan.wave} 波：魔王來襲！`, 'bad');
       this.updateBanner();
     });
@@ -90,11 +90,9 @@ export class App {
       this.toast(kind === 'recipe' ? `✨ 配方合成：${tower.def.name}！` : `合成成功：${tower.def.name} ${stars(tower.star)}`, 'good');
     });
     game.on('leak', () => this.sfx.play('leak'));
-    game.on('fire', (tower) => {
-      const p = tower.stats.projectile;
-      this.sfx.play(p === 'bolt' ? 'zap' : 'shoot');
-    });
-    game.on('explode', () => this.sfx.play('boom'));
+    game.on('fire', (tower) => this.sfx.playFire(tower.type));
+    game.on('impact', (p) => this.sfx.playImpact(p.kind));
+    game.on('kill', (enemy) => this.sfx.play(enemy.def.boss ? 'bossDeath' : 'kill'));
     game.on('victory', ({ wave }) => {
       storage.recordBest(wave);
       this.showResult('🏆 勝利！', `你守住了 ${wave} 波，橫跨 ${game.mapIndex + 1} 張地圖！`, [
@@ -129,6 +127,7 @@ export class App {
         if (steps >= 240) this.acc = 0;
       }
       this.validateView();
+      this.updateMusicMood();
       this.renderer.render(game, this.view, dt);
       this.updateHud();
     }
@@ -230,11 +229,34 @@ export class App {
     };
     $('btn-speed').onclick = () => this.cycleSpeed();
     $('btn-pause').onclick = () => this.togglePause();
-    $('btn-sound').onclick = () => {
-      this.sfx.unlock();
-      this.sfx.muted = !this.sfx.muted;
-      $('btn-sound').textContent = this.sfx.muted ? '🔇' : '🔊';
-    };
+    $('btn-sound').onclick = () => this.updateAudio({ sfxOn: !this.sfx.sfxOn });
+    $('btn-music').onclick = () => this.updateAudio({ musicOn: !this.sfx.musicOn });
+    $('vol-music').oninput = (e) => this.updateAudio({ musicVolume: e.target.value / 100, musicOn: true });
+    $('vol-sfx').oninput = (e) => this.updateAudio({ sfxVolume: e.target.value / 100, sfxOn: true });
+    this.updateAudio(storage.loadSettings(), false);
+    // 第一次點擊或按鍵時啟動音訊（瀏覽器限制）
+    const unlock = () => this.sfx.unlock();
+    window.addEventListener('pointerdown', unlock);
+    window.addEventListener('keydown', unlock);
+  }
+
+  updateAudio(settings, save = true) {
+    if (save) this.sfx.unlock();
+    this.sfx.setSettings(settings);
+    const { sfxOn, musicOn, sfxVolume, musicVolume } = this.sfx;
+    if (save) storage.saveSettings({ sfxOn, musicOn, sfxVolume, musicVolume });
+    $('btn-sound').classList.toggle('off', !sfxOn);
+    $('btn-music').classList.toggle('off', !musicOn);
+    $('vol-music').value = Math.round(musicVolume * 100);
+    $('vol-sfx').value = Math.round(sfxVolume * 100);
+  }
+
+  updateMusicMood() {
+    const g = this.game;
+    let intensity = 'calm';
+    if (g.state === 'wave') intensity = g.enemies.some((e) => e.def.boss) || g.wave % 10 === 0 ? 'boss' : 'battle';
+    this.sfx.setMood(g.mapIndex, intensity);
+    this.sfx.setMusicPaused(this.paused || g.state === 'gameover');
   }
 
   startWave() {

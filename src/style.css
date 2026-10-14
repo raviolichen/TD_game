@@ -179,6 +179,10 @@ button.big { padding: 10px 22px; font-size: 16px; }
 .difficulty { display: flex; justify-content: center; gap: 6px; margin-bottom: 16px; }
 .actions { display: flex; flex-direction: column; gap: 8px; align-items: center; }
 .best { color: var(--muted); margin: 14px 0 0; }
+.volume { display: flex; flex-direction: column; gap: 8px; margin-top: 18px; align-items: center; }
+.volume label { display: flex; gap: 10px; align-items: center; color: var(--muted); }
+.volume input { width: 180px; accent-color: var(--primary); }
+.controls button.off { opacity: 0.5; text-decoration: line-through; }
 .result-stats { display: grid; grid-template-columns: auto auto; gap: 4px 16px; justify-content: center; margin: 12px 0 18px; }
 .result-stats dt { color: var(--muted); }
 .result-stats dd { margin: 0; text-align: right; }
